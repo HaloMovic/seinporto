@@ -2,6 +2,9 @@
 // Three phases. He dodges everything until he's tired; the hit that finally lands doesn't end it,
 // he refuses and comes back harder. Phase 3 gives you no turns: attack after attack, with a
 // breather every three, then one last attack, and only then can you finish him or spare him.
+// Phase 3 opens by smashing your buttons; they only come back once he's out of breath.
+// With chaos mode on the fight is harder: the track runs faster (and every attack with it),
+// the attacks throw more at once, and phase 3 has one more attack and a longer ending.
 // Opens with the Konami code (↑ ↑ ↓ ↓ ← → ← → B A), "/fight" in the chat,
 // or by tapping "still here" in the footer five times.
 //
@@ -33,9 +36,12 @@ const TIRED_AFTER = { 1: 8, 2: 9 };       // his turns before a hit can land
 const BREATHER_EVERY = 3;                // phase 3: attacks between heals
 const BREATHER_HEAL = Math.round(MAX_HP * 0.45);
 const FALLBACK_BPM = 120;                // the beat attacks keep when a track is missing or still loading
+const HARD_RATE = 1.15;                  // chaos mode: how much faster the track (and so everything) runs
+const HARD_BREATHER_HEAL = Math.round(MAX_HP * 0.3);
 
 const LINES = {
   intro: ["it's a beautiful day on my portfolio.", 'the scroll is locked. the guestbook is open.', 'on days like these, visitors like you...', '...should be signing my guestbook.', 'but you wanted a fight. so.'],
+  hardIntro: ['oh, and chaos mode is on?', "then i'm not holding back."],
   1: {
     // one before each turn, in the order of STAGE_ATTACKS
     turns: ['ready?', "i'm not gonna make this easy.", 'dodge this.', 'you really came back for this?', 'watch the floor. and the ceiling.', 'okay. two at once.', 'my pencil never runs out.', "heh. you're not bad."],
@@ -52,6 +58,8 @@ const LINES = {
     start: ['...', 'something is holding me up.', "and it doesn't want you to win."],
     // one before each attack, in the order of STAGE_ATTACKS[3]
     turns: ['this is my last breath.', 'the screen is mine now.', 'round and round.', 'keep up with the beat.', "there's only one way out.", "i'm not letting you through.", 'which way is down?', 'just... give up.', 'no more room.'],
+    smash: ["and you won't be needing these."],
+    frenzy: 'you wanted chaos? here.', // chaos mode's extra attack
     final: ['alright.', 'this is it. my special attack.', 'survive this and the site is yours.'],
   },
 };
@@ -262,6 +270,12 @@ const sfx = {
     tone(58, 0.16, { type: 'sine', vol: 0.14, to: 40 });
     setTimeout(() => tone(52, 0.13, { type: 'sine', vol: 0.09, to: 38 }), 160);
   },
+  // a button coming apart
+  shatter() {
+    hiss(0.05, { vol: 0.2, filter: 'highpass', freq: 5000 });
+    hiss(0.4, { vol: 0.08, filter: 'bandpass', freq: 3200, to: 500, q: 3 });
+    tone(880, 0.3, { type: 'square', vol: 0.03, to: 110 });
+  },
   glitch: () => { for (let i = 0; i < 5; i++) setTimeout(() => tone(gsap.utils.random(200, 2000), 0.03, { vol: 0.03 }), i * 40); },
 };
 
@@ -269,7 +283,7 @@ const sfx = {
 // The mp3s are fetched once and kept; the decoded audio (tens of MB each) only for the phase
 // that's playing and the one after it.
 const rawTracks = {}, decoded = {}, beatInfo = {};
-const music = { src: null, gain: null, analyser: null, bins: null, start: 0, spb: 60 / FALLBACK_BPM, offset: 0, token: 0, stage: 0 };
+const music = { src: null, gain: null, analyser: null, bins: null, start: 0, spb: 60 / FALLBACK_BPM, offset: 0, rate: 1, token: 0, stage: 0 };
 
 function loadTrack(stageNo) {
   const url = BOSS.music[stageNo];
@@ -349,6 +363,9 @@ async function startMusic(stageNo) {
   const src = ctx.createBufferSource(), gain = ctx.createGain(), analyser = ctx.createAnalyser();
   src.buffer = buf;
   src.loop = true;
+  // chaos mode plays it faster; song time runs faster with it, so the attacks keep up
+  const rate = fight.hard ? HARD_RATE : 1;
+  src.playbackRate.value = rate;
   // loop on a whole number of beats, so the beat grid carries straight on into the next pass
   const spb = 60 / beat.bpm;
   src.loopStart = beat.offset;
@@ -359,7 +376,7 @@ async function startMusic(stageNo) {
   gain.connect(analyser);
   const at = ctx.currentTime + 0.05;
   src.start(at);
-  Object.assign(music, { src, gain, analyser, bins: new Uint8Array(analyser.frequencyBinCount), start: at, spb, offset: beat.offset, stage: stageNo });
+  Object.assign(music, { src, gain, analyser, bins: new Uint8Array(analyser.frequencyBinCount), start: at, spb, offset: beat.offset, rate, stage: stageNo });
   loadTrack(stageNo + 1); // get the next phase ready while this one plays
 }
 // slow: the track winds down like a tape running out
@@ -368,7 +385,7 @@ function stopMusic(slow = false) {
   if (!music.src) return;
   const { src, gain } = music, t = getAudioCtx().currentTime;
   if (slow) {
-    src.playbackRate.setValueAtTime(1, t);
+    src.playbackRate.setValueAtTime(src.playbackRate.value, t);
     src.playbackRate.linearRampToValueAtTime(0.15, t + 1.3);
     gain.gain.setValueAtTime(gain.gain.value, t);
     gain.gain.linearRampToValueAtTime(0, t + 1.3);
@@ -383,7 +400,14 @@ function stopMusic(slow = false) {
 // seconds into the track as you hear it, or null when there's no music to follow
 function songTime() {
   if (!music.src || audioCtx?.state !== 'running') return null;
-  return audioCtx.currentTime - music.start - (audioCtx.outputLatency || audioCtx.baseLatency || 0);
+  return (audioCtx.currentTime - music.start - (audioCtx.outputLatency || audioCtx.baseLatency || 0)) * music.rate;
+}
+// real seconds until the track's next beat (none when there's no music)
+function toNextBeat() {
+  const t = songTime();
+  if (t === null) return 0;
+  const b = (t - music.offset) / music.spb;
+  return (Math.ceil(b) - b) * music.spb / music.rate;
 }
 
 // the music, felt: a glow that pulses on the beat, louder when the track is, and a bob on every beat
@@ -405,7 +429,7 @@ gsap.ticker.add(() => {
   lastBeat = beat;
   if (reduceMotion || fight.phase === 'intro') return;
   const big = beat % 4 === 0;
-  gsap.fromTo(enemyEl, { y: big ? 4 : 2, scaleY: big ? 0.97 : 0.985 }, { y: 0, scaleY: 1, duration: music.spb * 0.9, ease: 'power2.out', overwrite: 'auto' });
+  gsap.fromTo(enemyEl, { y: big ? 4 : 2, scaleY: big ? 0.97 : 0.985 }, { y: 0, scaleY: 1, duration: music.spb / music.rate * 0.9, ease: 'power2.out', overwrite: 'auto' });
 });
 
 /* ---------- sprites: the phase art if it's there, otherwise his photo crushed to grey pixels ---------- */
@@ -648,7 +672,7 @@ async function attack() {
   setMode('target');
   gsap.set(barEl, { opacity: 1 });
   const p = await new Promise(resolve => {
-    const tw = gsap.fromTo(barEl, { x: 0 }, { x: targetEl.clientWidth, duration: 1.15, ease: 'none', onComplete: () => resolve(null) });
+    const tw = gsap.fromTo(barEl, { x: 0 }, { x: targetEl.clientWidth, duration: fight.hard ? 0.85 : 1.15, ease: 'none', onComplete: () => resolve(null) });
     onKey = k => {
       if (k !== 'ok') return;
       tw.pause();
@@ -755,8 +779,12 @@ async function phaseBreak(next) {
   startMusic(next);
   await sleep(900);
   if (!await speeches(LINES[next].start)) return;
+  if (next === 3) {
+    if (!await speeches(LINES[3].smash)) return;
+    if (!await smashButtons()) return;
+  }
   sfx.heal();
-  await type(next === 2 ? '* SEIN is back on his feet.\n* Your HP was restored.' : "* Something else is here.\n* It won't give you a turn.\n* Your HP was restored.");
+  await type(next === 2 ? '* SEIN is back on his feet.\n* Your HP was restored.' : "* Your buttons are gone.\n* It won't give you a turn.\n* Your HP was restored.");
   if (run !== session) return;
   if (next === 3) gauntlet();
   else showMenu();
@@ -774,6 +802,70 @@ async function darkLine(text) {
   await Promise.race([sleep(1600), waitOk()]);
   waiter = null;
   return run === session;
+}
+
+// phase 3's intro: one by one, on the beat, the buttons shudder and burst into pixels
+async function smashButtons() {
+  const run = session;
+  for (const b of menuBtns) {
+    sfx.glitch();
+    await gsap.fromTo(b, { x: -3 }, { x: 3, duration: 0.04, repeat: 7, yoyo: true, ease: 'none', clearProps: 'x' });
+    if (run !== session) return false;
+    await sleep(toNextBeat() * 1000);
+    if (run !== session) return false;
+    shatter(b);
+    b.classList.add('broken');
+    b.disabled = true;
+    sfx.shatter();
+    shake(6);
+    glitch();
+  }
+  await sleep(700);
+  return run === session;
+}
+
+function shatter(el) {
+  const r = el.getBoundingClientRect(), o = bossEl.getBoundingClientRect();
+  const color = getComputedStyle(el).color;
+  for (let i = 0; i < 22; i++) {
+    const s = document.createElement('i'), size = pick([3, 4, 4, 6]);
+    s.className = 'boss-shard';
+    Object.assign(s.style, {
+      left: `${r.left - o.left + rand(0, r.width)}px`, top: `${r.top - o.top + rand(0, r.height)}px`,
+      width: `${size}px`, height: `${size}px`, background: color,
+    });
+    bossEl.append(s);
+    // a burst up and out, then they fall off the bottom of the screen
+    const up = rand(20, 60), fall = rand(0.9, 1.5);
+    gsap.to(s, { x: rand(-110, 110), rotation: rand(-360, 360), duration: fall + 0.25, ease: 'none' });
+    gsap.timeline({ onComplete: () => s.remove() })
+      .to(s, { y: -up, duration: 0.25, ease: 'power2.out' })
+      .to(s, { y: innerHeight - r.top + 20, duration: fall, ease: 'power2.in' });
+  }
+}
+
+// once he's out of breath, the buttons flicker back together
+async function mendButtons() {
+  const run = session;
+  for (const b of menuBtns) {
+    b.classList.remove('broken');
+    b.disabled = false;
+    gsap.fromTo(b, { opacity: 0 }, { opacity: 1, duration: 0.3, ease: 'steps(3)', clearProps: 'opacity' });
+    sfx.rise();
+    await sleep(160);
+    if (run !== session) return;
+  }
+}
+
+// straight to broken (or whole), for a restart
+function setBroken(on) {
+  bossEl.querySelectorAll('.boss-shard').forEach(s => s.remove());
+  menuBtns.forEach(b => {
+    gsap.killTweensOf(b);
+    gsap.set(b, { clearProps: 'all' });
+    b.classList.toggle('broken', on);
+    b.disabled = on;
+  });
 }
 
 function glitch(times = 1) {
@@ -824,14 +916,19 @@ async function enemyTurn() {
 async function gauntlet() {
   const run = session;
   onKey = null;
-  const list = STAGE_ATTACKS[3], lines = LINES[3];
+  const lines = LINES[3], list = [...STAGE_ATTACKS[3]], turns = [...lines.turns];
+  // chaos mode: one more, after 'noose'
+  if (fight.hard) {
+    list.splice(5, 0, 'frenzy');
+    turns.splice(5, 0, lines.frenzy);
+  }
   for (let i = 0; i < list.length; i++) {
     fight.turn++;
     fight.turnsInStage++;
     fight.phase = 'enemy';
     ++typeToken;
     boxText.textContent = '';
-    await speech(lines.turns[i % lines.turns.length]);
+    await speech(turns[i % turns.length]);
     if (run !== session) return;
     const survived = await runAttack(list[i]);
     if (run !== session) return;
@@ -847,14 +944,16 @@ async function gauntlet() {
   if (run !== session) return;
   if (!survived) return gameOver();
   fight.exhausted = true;
-  await type('* SEIN is out of breath.');
+  await mendButtons();
+  if (run !== session) return;
+  await type('* SEIN is out of breath.\n* Your buttons flicker back.');
   if (run !== session) return;
   showMenu();
 }
 
 async function breather() {
   const before = fight.php;
-  fight.php = Math.min(MAX_HP, fight.php + BREATHER_HEAL);
+  fight.php = Math.min(MAX_HP, fight.php + (fight.hard ? HARD_BREATHER_HEAL : BREATHER_HEAL));
   fight.kr = 0;
   updateStats();
   sfx.heal();
@@ -871,7 +970,7 @@ const G = { running: false, bullets: [], waits: [], t: 0, spb: 60 / FALLBACK_BPM
 // its beats; otherwise the wall clock with a steady stand-in beat.
 function startClock() {
   if (songTime() !== null) Object.assign(G, { clock: () => songTime() ?? G.t, spb: music.spb, offset: music.offset });
-  else Object.assign(G, { clock: () => performance.now() / 1000, spb: 60 / FALLBACK_BPM, offset: 0 });
+  else Object.assign(G, { clock: () => performance.now() / 1000, spb: 60 / FALLBACK_BPM / (fight.hard ? HARD_RATE : 1), offset: 0 });
   G.t = G.cursor = G.clock();
 }
 // the first beat (or 1/sub of a beat) at or after t
@@ -1256,6 +1355,8 @@ function band() {
 // have to land on it (a blaster fires at at(2), two beats after it appears).
 const api = {
   get spb() { return G.spb; },
+  // chaos mode: the attacks below throw more at you
+  get hard() { return fight.hard; },
   until: t => new Promise(r => G.waits.push({ at: t, r })),
   wait: s => api.until(G.t + s),
   // after a cut, the screen comes back on this beat, with the next attack already set up
@@ -1398,12 +1499,15 @@ const ATTACKS = {
     await s.sync();
     for (let i = 0; i < 8; i++) {
       s.floorBone({ from: i % 2 ? 'right' : 'left', height: rand(18, 40), beats: 2 });
+      if (s.hard && i % 4 === 3) s.aimedBlaster(0.6, s.at(2));
       await s.beat(1);
     }
-    s.floorBone({ from: 'left', edge: 'full', color: 'blue', beats: 2 });
-    await s.beat(2);
-    s.floorBone({ from: 'right', edge: 'full', color: 'blue', beats: 2 });
-    await s.beat(5);
+    const last = s.hard ? ['blue', 'orange', 'blue'] : ['blue', 'blue'];
+    for (let i = 0; i < last.length; i++) {
+      s.floorBone({ from: i % 2 ? 'right' : 'left', edge: 'full', color: last[i], beats: 2 });
+      await s.beat(s.hard ? 1.5 : 2);
+    }
+    await s.beat(3);
   },
   async blasters(s) {
     await s.box(150, 150);
@@ -1412,9 +1516,14 @@ const ATTACKS = {
     for (let i = 0; i < 4; i++) {
       s.aimedBlaster(1, s.at(2));
       if (i) s.aimedBlaster(1, s.at(2));
+      if (s.hard && i > 1) s.aimedBlaster(0.8, s.at(2));
       await s.beat(2);
     }
     s.cross(s.at(2));
+    if (s.hard) {
+      await s.beat(2);
+      for (let k = 0; k < 4; k++) s.ringBlaster(45 + k * 90, s.at(2), 0.8);
+    }
     await s.beat(4);
   },
   // bones thrown in from every side at once, all landing where you were, on the beat
@@ -1423,8 +1532,8 @@ const ATTACKS = {
     s.soul('red');
     await s.sync();
     for (let i = 0; i < 12; i++) {
-      s.boneRing(i % 2 ? 5 : 4, 2, i * 0.4);
-      if (i % 4 === 3) s.aimedBlaster(0.8, s.at(2));
+      s.boneRing((i % 2 ? 5 : 4) + (s.hard ? 2 : 0), 2, i * 0.4);
+      if (s.hard ? i % 2 : i % 4 === 3) s.aimedBlaster(0.8, s.at(2));
       await s.beat(1);
     }
     await s.beat(3);
@@ -1434,7 +1543,8 @@ const ATTACKS = {
     s.soul('red');
     await s.sync();
     for (let i = 0; i < 10; i++) {
-      s.gapWall({ from: 'right', gap: 0.5 + Math.sin(i * 0.9) * 0.3, size: 44, beats: 2 });
+      s.gapWall({ from: 'right', gap: 0.5 + Math.sin(i * 0.9) * 0.3, size: s.hard ? 40 : 44, beats: 2 });
+      if (s.hard && i % 3 === 2) s.floorBone({ from: 'left', edge: 'full', color: 'blue', beats: 2 });
       await s.beat(1);
     }
     await s.beat(4);
@@ -1442,10 +1552,11 @@ const ATTACKS = {
   async slams(s) {
     await s.box(150, 150);
     await s.sync();
-    for (const dir of ['down', 'left', 'up', 'right']) {
+    const dirs = s.hard ? ['down', 'left', 'up', 'right', 'down', 'up'] : ['down', 'left', 'up', 'right'];
+    for (const dir of dirs) {
       s.slam(dir);
-      s.spikes({ side: dir, height: 20, rise: s.at(2), stay: s.spb * 0.8 });
-      await s.beat(3);
+      s.spikes({ side: dir, height: 20, rise: s.at(s.hard ? 1.5 : 2), stay: s.spb * 0.8 });
+      await s.beat(s.hard ? 2.5 : 3);
     }
     s.soul('red');
     await s.beat(1);
@@ -1457,7 +1568,7 @@ const ATTACKS = {
     await s.sync();
     for (let i = 0; i < 10; i++) {
       s.floorBone({ from: i % 2 ? 'left' : 'right', height: 22 + (i % 3) * 8, beats: 2 });
-      if (i % 4 === 1) s.floorBone({ from: 'left', edge: 'top', height: 44, beats: 2 });
+      if (s.hard ? i % 2 : i % 4 === 1) s.floorBone({ from: 'left', edge: 'top', height: 44, beats: 2 });
       await s.beat(1);
     }
     s.soul('red');
@@ -1468,10 +1579,11 @@ const ATTACKS = {
     await s.box(200, 150);
     s.soul('red');
     await s.sync();
-    const rain = Promise.all([s.rain('pencils', 16, 0.5), s.rain('code', 16, 1)]);
+    const rain = Promise.all([s.rain('pencils', 16, 0.5), s.rain('code', 16, s.hard ? 0.5 : 1)]);
     for (let i = 0; i < 3; i++) {
       await s.beat(4);
       s.aimedBlaster(0.7, s.at(2));
+      if (s.hard) s.aimedBlaster(0.7, s.at(2));
     }
     await rain;
     await s.wait(1);
@@ -1482,7 +1594,7 @@ const ATTACKS = {
     await s.box(170, 150);
     s.soul('red');
     await s.sync();
-    const rain = s.rain('code', 14, 0.5);
+    const rain = Promise.all([s.rain('code', 14, 0.5), s.hard && s.rain('pencils', 14, 0.5)]);
     await s.beat(3);
     s.flip(true);
     await s.beat(1);
@@ -1500,7 +1612,8 @@ const ATTACKS = {
     await s.box(170, 170);
     s.soul('red');
     await s.sync();
-    s.spinner({ arms: 2, step: 30, beats: 16, dir: b => (b < 11 ? 1 : -1) });
+    if (s.hard) s.spinner({ arms: 3, step: 24, beats: 16, dir: b => (Math.floor(b / 5) % 2 ? -1 : 1) });
+    else s.spinner({ arms: 2, step: 30, beats: 16, dir: b => (b < 11 ? 1 : -1) });
     await s.beat(6);
     for (let i = 0; i < 4; i++) {
       s.aimedBlaster(0.6, s.at(2));
@@ -1515,6 +1628,7 @@ const ATTACKS = {
     for (let i = 0; i < 10; i++) {
       s.floorBone({ from: i % 2 ? 'right' : 'left', edge: 'full', color: i % 2 ? 'orange' : 'blue', beats: 2.5 });
       if (i % 3 === 2) s.floorBone({ from: 'left', height: 24, beats: 1.5 });
+      if (s.hard && i % 3 === 0) s.floorBone({ from: 'right', edge: 'top', height: 24, beats: 1.5 });
       await s.beat(1);
     }
     await s.beat(5);
@@ -1525,7 +1639,7 @@ const ATTACKS = {
     s.soul('red');
     await s.sync();
     for (let i = 0; i < 24; i++) {
-      s.gapWall({ from: 'right', gap: 0.5 + Math.sin(i * 0.45) * 0.32, size: 52, beats: 3, thick: 8 });
+      s.gapWall({ from: 'right', gap: 0.5 + Math.sin(i * (s.hard ? 0.55 : 0.45)) * 0.32, size: s.hard ? 46 : 52, beats: 3, thick: 8 });
       await s.beat(0.5);
     }
     await s.beat(6);
@@ -1534,19 +1648,21 @@ const ATTACKS = {
     await s.box(150, 150);
     s.soul('red');
     await s.sync();
-    for (let i = 0; i < 10; i++) {
+    for (let i = 0; i < (s.hard ? 14 : 10); i++) {
       s.ringBlaster(i * 36 + 10, s.at(1.5));
       await s.beat(0.5);
     }
     await s.beat(1);
     s.blasterRow('top', 5, Math.floor(rand(0, 5)), s.at(2));
+    if (s.hard) s.blasterRow('left', 5, Math.floor(rand(0, 5)), s.at(2));
     await s.beat(4);
   },
   async gravity(s) {
     await s.box(170, 170);
     await s.sync();
-    const tools = s.tools(2, 15);
-    for (const dir of ['down', 'right', 'up', 'left', 'down']) {
+    const dirs = s.hard ? ['down', 'right', 'up', 'left', 'down', 'up'] : ['down', 'right', 'up', 'left', 'down'];
+    const tools = s.tools(s.hard ? 3 : 2, dirs.length * 3);
+    for (const dir of dirs) {
       s.slam(dir);
       s.spikes({ side: dir, height: 20, rise: s.at(2), stay: s.spb * 0.7 });
       await s.beat(3);
@@ -1565,6 +1681,7 @@ const ATTACKS = {
       if (i % 3 === 2) s.floorBone({ from, edge: 'full', color: i % 2 ? 'blue' : 'orange', beats: 2 });
       else s.gapWall({ from, gap: 0.5 + Math.sin(i * 1.7) * 0.32, size: 46, beats: 2 });
       if (i % 4 === 3) s.blasterRow('top', 5, Math.floor(rand(0, 5)), s.at(2));
+      if (s.hard && i % 4 === 1) s.aimedBlaster(0.5, s.at(2));
       await s.beat(1);
     }
     await s.beat(4);
@@ -1576,9 +1693,9 @@ const ATTACKS = {
     s.soul('red');
     s.glitch();
     await s.sync();
-    for (let i = 0; i < 6; i++) {
+    for (let i = 0; i < (s.hard ? 8 : 6); i++) {
       s.blasterRow(i % 2 ? 'left' : 'top', 5, Math.floor(rand(0, 5)), s.at(2));
-      await s.beat(2);
+      await s.beat(s.hard ? 1.5 : 2);
     }
     await s.beat(3);
   },
@@ -1590,6 +1707,7 @@ const ATTACKS = {
     await s.sync();
     for (let i = 0; i < 16; i++) {
       s.aimedBlaster(0.7, s.at(1.5));
+      if (s.hard && i % 2) s.aimedBlaster(0.5, s.at(1.5));
       if (i % 4 === 3) s.cross(s.at(2), 0.6);
       await s.beat(1);
     }
@@ -1599,11 +1717,12 @@ const ATTACKS = {
     await s.box(260, 140);
     s.soul('blue', 'down');
     await s.sync();
+    const extra = s.hard ? 6 : 0;
     for (let i = 0; i < 14; i++) {
-      s.floorBone({ from: 'right', edge: 'bottom', height: 14 + Math.abs(Math.sin(i * 0.8)) * 28, beats: 2 });
-      s.floorBone({ from: 'right', edge: 'top', height: 12 + Math.abs(Math.cos(i * 0.8)) * 22, beats: 2 });
+      s.floorBone({ from: 'right', edge: 'bottom', height: 14 + extra + Math.abs(Math.sin(i * 0.8)) * 28, beats: 2 });
+      s.floorBone({ from: 'right', edge: 'top', height: 12 + extra + Math.abs(Math.cos(i * 0.8)) * 22, beats: 2 });
       await s.beat(1);
-      if (i === 7) s.flip(true);
+      if (s.hard ? i % 4 === 3 : i === 7) s.flip(!G.flipped);
     }
     await s.beat(4);
     s.flip(false);
@@ -1615,12 +1734,13 @@ const ATTACKS = {
     s.soul('red');
     await s.sync();
     let col = 2, row = 2;
-    for (let i = 0; i < 5; i++) {
+    const gap = s.hard ? 2.5 : 3;
+    for (let i = 0; i < (s.hard ? 7 : 5); i++) {
       col = clamp(0, 4, col + pick([-2, -1, 1, 2]));
       row = clamp(0, 4, row + pick([-2, -1, 1, 2]));
-      s.blasterRow('top', 5, col, s.at(3));
-      s.blasterRow('left', 5, row, s.at(3));
-      await s.beat(3);
+      s.blasterRow('top', 5, col, s.at(gap));
+      s.blasterRow('left', 5, row, s.at(gap));
+      await s.beat(gap);
     }
     await s.beat(3);
   },
@@ -1629,9 +1749,9 @@ const ATTACKS = {
     s.soul('red');
     s.glitch();
     await s.sync();
-    const all = Promise.all([s.rain('pencils', 14, 0.5), s.rain('code', 14, 1), s.rain('bands', 14, 2)]);
-    for (let i = 0; i < 4; i++) {
-      await s.beat(3);
+    const all = Promise.all([s.rain('pencils', 14, 0.5), s.rain('code', 14, 1), s.rain('bands', 14, s.hard ? 1.5 : 2)]);
+    for (let i = 0; i < (s.hard ? 6 : 4); i++) {
+      await s.beat(s.hard ? 2 : 3);
       s.aimedBlaster(0.8, s.at(2));
     }
     await all;
@@ -1641,8 +1761,9 @@ const ATTACKS = {
     await s.box(160, 160);
     s.soul('red');
     await s.sync();
-    for (let i = 0; i < 16; i++) {
+    for (let i = 0; i < (s.hard ? 24 : 16); i++) {
       s.ringBlaster(i * 47, s.at(1.5));
+      if (s.hard && i % 4 === 3) s.ringBlaster(i * 47 + 90, s.at(1.5));
       await s.beat(0.5);
     }
     await s.beat(3);
@@ -1657,7 +1778,7 @@ const ATTACKS = {
     s.spinner({ arms: 3, step: 24, beats: 18, dir: b => (Math.floor(b / 4) % 2 ? -1 : 1) });
     await s.beat(3);
     for (let i = 0; i < 16; i++) {
-      if (i % 2 === 0) s.boneRing(3, 2, i * 0.5);
+      if (s.hard || i % 2 === 0) s.boneRing(3, 2, i * 0.5);
       if (i % 4 === 3) s.aimedBlaster(0.5, s.at(2));
       await s.beat(1);
     }
@@ -1668,9 +1789,10 @@ const ATTACKS = {
     await s.box(200, 170);
     s.soul('red');
     await s.sync();
-    const bands = s.rain('bands', 17, 4);
-    for (let i = 0; i < 6; i++) {
-      const beats = i < 3 ? 3 : 2.5;
+    const rings = s.hard ? 8 : 6;
+    const bands = s.rain('bands', s.hard ? 18 : 17, s.hard ? 2 : 4);
+    for (let i = 0; i < rings; i++) {
+      const beats = i < 3 ? (s.hard ? 2.5 : 3) : (s.hard ? 2 : 2.5);
       s.closingRing({ beats, spin: i % 2 ? 1 : -1 });
       await s.beat(beats);
     }
@@ -1683,13 +1805,13 @@ const ATTACKS = {
     await s.box(160, 160);
     await s.sync();
     let dir = 'down';
-    for (let i = 0; i < 7; i++) {
+    for (let i = 0; i < (s.hard ? 9 : 7); i++) {
       dir = pick(Object.keys(DIRS).filter(d => d !== dir));
       s.slam(dir);
       s.spikes({ side: dir, height: 22, rise: s.at(1.5), stay: s.spb * 0.6 });
       await s.beat(1);
-      if (i % 2) s.aimedBlaster(0.6, s.at(1.5));
-      else s.boneRing(4, 1.5, i);
+      if (s.hard || i % 2) s.aimedBlaster(0.6, s.at(1.5));
+      if (s.hard || !(i % 2)) s.boneRing(4, 1.5, i);
       await s.beat(2);
     }
     s.soul('red');
@@ -1708,15 +1830,32 @@ const ATTACKS = {
       }
       if (i % 3 === 2) s.floorBone({ from: i % 2 ? 'left' : 'right', edge: 'full', color: i % 6 === 2 ? 'blue' : 'orange', beats: 2 });
       else s.gapWall({ from: 'right', gap: 0.5 + Math.sin(i * 1.3) * 0.3, size: 42, beats: 2 });
-      if (i % 4 === 2) s.aimedBlaster(0.5, s.at(2));
+      if (s.hard ? i % 2 === 0 : i % 4 === 2) s.aimedBlaster(0.5, s.at(2));
       await s.beat(1);
     }
     await s.beat(4);
   },
+  // chaos mode only: a cross that snaps round, code flying through it, and blasters on top
+  async frenzy(s) {
+    await s.box(190, 170);
+    s.soul('red');
+    s.glitch(2);
+    await s.sync();
+    s.spinner({ arms: 2, step: 30, beats: 16, dir: b => (Math.floor(b / 3) % 2 ? -1 : 1) });
+    const rain = s.rain('code', 18, 1);
+    await s.beat(4);
+    for (let i = 0; i < 7; i++) {
+      s.aimedBlaster(0.5, s.at(2));
+      await s.beat(2);
+    }
+    await rain;
+    await s.beat(1);
+  },
 
   // his last attack: one thing after another with a cut to black between each, until he runs out
   async final(s) {
-    for (const part of ['arrays', 'slams', 'vortex', 'spiral', 'tunnel']) {
+    const parts = s.hard ? ['arrays', 'slams', 'vortex', 'noose', 'spiral', 'quake', 'tunnel'] : ['arrays', 'slams', 'vortex', 'spiral', 'tunnel'];
+    for (const part of parts) {
       s.cut();
       await ATTACKS[part](s);
     }
@@ -1724,7 +1863,7 @@ const ATTACKS = {
     await s.box(150, 150);
     await s.sync();
     s.glitch(3);
-    for (let i = 0; i < 3; i++) {
+    for (let i = 0; i < (s.hard ? 4 : 3); i++) {
       s.cross(s.at(2));
       await s.beat(1);
       for (let k = 0; k < 4; k++) s.ringBlaster(45 + k * 90 + i * 15, s.at(2), 0.7);
@@ -1735,9 +1874,10 @@ const ATTACKS = {
     await s.box(170, 150);
     await s.sync();
     s.glitch(2);
-    for (let i = 0; i < 6; i++) {
-      s.half(i % 2 ? 'right' : 'left', s.at(3));
-      await s.beat(3);
+    const every = s.hard ? 2.5 : 3;
+    for (let i = 0; i < (s.hard ? 8 : 6); i++) {
+      s.half(i % 2 ? 'right' : 'left', s.at(every));
+      await s.beat(every);
     }
     await s.beat(3);
   },
@@ -1746,7 +1886,7 @@ const ATTACKS = {
 const STAGE_ATTACKS = {
   1: ['slide', 'blasters', 'burst', 'gaps', 'pincer', ['slide', 'slams'], 'doodles', ['burst', 'blasters']],
   2: ['flipRain', 'spinner', 'colors', 'snake', 'ring', ['gravity', 'colors'], 'crossfire', ['spinner', 'snake'], ['ring', 'flipRain']],
-  // back to back, a breather after every BREATHER_EVERY; then 'final'
+  // back to back, a breather after every BREATHER_EVERY; then 'final' (chaos mode adds 'frenzy')
   3: ['arrays', 'chase', 'vortex', 'tunnel', 'noose', 'grid', 'quake', 'storm', 'squeeze'],
 };
 
@@ -2021,6 +2161,7 @@ function resetStage(stageNo, items) {
   gsap.set([spriteEl, box, world, cutEl, flashEl], { clearProps: 'all' });
   cutText.textContent = '';
   showSprite(stageNo);
+  setBroken(stageNo === 3);
   updateStats();
   setMode('text');
   boxText.textContent = '';
@@ -2057,17 +2198,19 @@ async function openBoss() {
   document.documentElement.classList.add('boss-open');
   bossEl.hidden = false;
   getAudioCtx().resume().catch(() => {});
+  fight.hard = document.documentElement.classList.contains('chaos');
   loadTrack(1); // decode and find the beat while the intro plays
-  helpEl.textContent = touchOnly
+  const controls = touchOnly
     ? 'tap to choose · drag to move · hold to jump when blue'
     : 'arrows move · up jumps when blue · Z confirm · X back · esc leaves';
+  helpEl.replaceChildren(...(fight.hard ? [Object.assign(document.createElement('b'), { textContent: 'HARD MODE · ' })] : []), controls);
   await loadSprites();
   if (run !== session) return;
   resetStage(1, ITEMS);
   await intro();
   if (run !== session) return;
   startMusic(1);
-  if (!await speeches(LINES.intro)) return;
+  if (!await speeches(fight.hard ? [...LINES.intro, ...LINES.hardIntro] : LINES.intro)) return;
   showMenu();
 }
 
@@ -2085,6 +2228,7 @@ function closeBoss() {
   drag = null;
   stopMusic();
   gsap.killTweensOf([stage, flashEl, box, barEl, spriteEl, enemyEl, slashEl, dmgEl, hpFill, endTitle, endActions, endHeart, world, cutEl]);
+  setBroken(false);
   gsap.set(enemyEl, { clearProps: 'all' });
   bossEl.classList.remove('glitching');
   bossEl.hidden = true;

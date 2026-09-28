@@ -926,7 +926,12 @@ html.boss-open,html.boss-open body{overflow:hidden}
 .boss-menu button:focus-visible{outline:none}
 .boss-heart{width:18px;height:16px;flex-shrink:0;background:var(--heart) center/contain no-repeat;visibility:hidden}
 .boss-menu button.sel .boss-heart{visibility:visible}
+/* phase 3 smashes them: what's left is the outline of where they were */
+.boss-menu button.broken{border-color:#2b2b2b;border-style:dashed;color:#2b2b2b;cursor:default}
+.boss-menu button.broken .boss-heart{visibility:hidden}
+.boss-shard{position:absolute;z-index:2;pointer-events:none}
 .boss-help{min-height:1em;font-size:18px;color:#8a8a8a;text-align:center}
+.boss-help b{font-weight:400;color:#ff2a55}
 .boss-end{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:24px;background:#000;text-align:center}
 .boss-end[hidden]{display:none}
 .boss-end-heart{position:relative;width:54px;height:48px}
