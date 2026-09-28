@@ -757,9 +757,9 @@ async function phaseBreak(next) {
     await gsap.fromTo(flashEl, { scale: 1.9 }, { scale: 1.6, duration: 0.55, ease: 'power2.out' });
     if (run !== session) return;
   }
-  Object.assign(fight, { stage: next, turnsInStage: 0, tired: false, php: MAX_HP, kr: 0 });
+  // every phase starts with a full bag
+  Object.assign(fight, { stage: next, turnsInStage: 0, tired: false, php: MAX_HP, kr: 0, items: ITEMS.map(it => ({ ...it })) });
   bossEl.dataset.stage = next;
-  fight.checkpoint = fight.items.map(it => ({ ...it }));
   updateStats();
   showSprite(next);
   gsap.set(spriteEl, { y: 0, scaleY: 1 });
@@ -2144,13 +2144,12 @@ async function showEnd({ title, text, broken = false, again }) {
 /* ---------- open / close ---------- */
 const bossAllowed = () => state === 'chat' || !document.documentElement.classList.contains('locked');
 
-// start (or restart) a phase
-function resetStage(stageNo, items) {
+// start (or restart) a phase, always with a full bag
+function resetStage(stageNo) {
   Object.assign(fight, {
     stage: stageNo, php: MAX_HP, kr: 0, turn: 0, turnsInStage: 0, sel: 0,
-    tired: false, exhausted: false, phase: 'intro', items: items.map(it => ({ ...it })),
+    tired: false, exhausted: false, phase: 'intro', items: ITEMS.map(it => ({ ...it })),
   });
-  fight.checkpoint = items.map(it => ({ ...it }));
   bossEl.dataset.stage = stageNo;
   onKey = null;
   waiter = null;
@@ -2206,7 +2205,7 @@ async function openBoss() {
   helpEl.replaceChildren(...(fight.hard ? [Object.assign(document.createElement('b'), { textContent: 'HARD MODE · ' })] : []), controls);
   await loadSprites();
   if (run !== session) return;
-  resetStage(1, ITEMS);
+  resetStage(1);
   await intro();
   if (run !== session) return;
   startMusic(1);
@@ -2240,7 +2239,7 @@ againBtn.addEventListener('click', async () => {
   const run = ++session;
   // after a GAME OVER you pick up at the start of the phase you reached; after an ending, from the top
   const stageNo = fight.retry ? fight.stage : 1;
-  resetStage(stageNo, fight.retry ? fight.checkpoint : ITEMS);
+  resetStage(stageNo);
   await intro();
   if (run !== session) return;
   startMusic(stageNo);
