@@ -844,6 +844,14 @@ html.boss-open,html.boss-open body{overflow:hidden}
   touch-action:none;user-select:none;-webkit-user-select:none;
 }
 .boss[hidden]{display:none}
+/* the music, felt: --pulse is set every frame from the track's beat and loudness */
+.boss{--pulse:0;--glow:255,255,255}
+.boss[data-stage="2"]{--glow:255,58,58}
+.boss[data-stage="3"]{--glow:102,204,255}
+.boss::before{content:"";position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse 70% 55% at 50% 62%,rgba(var(--glow),.16),transparent 70%);opacity:var(--pulse)}
+.boss-box{box-shadow:0 0 calc(var(--pulse) * 18px) calc(var(--pulse) * 2px) rgba(var(--glow),calc(var(--pulse) * .55))}
+.boss-enemy{transform-origin:50% 100%}
+@media(prefers-reduced-motion:reduce){.boss::before{display:none}.boss-box{box-shadow:none}}
 .boss-flash{position:absolute;left:50%;top:50%;z-index:3;width:27px;height:24px;margin:-12px 0 0 -13px;opacity:0;pointer-events:none;display:flex}
 .boss-world{position:absolute;inset:0;display:grid;place-items:center}
 .boss-fx{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none}
