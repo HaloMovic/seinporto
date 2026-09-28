@@ -576,8 +576,9 @@ btnYes.addEventListener('click', () => closeConfirm(startAiming));
 const gun = document.getElementById('gun');
 const flash = document.getElementById('flash');
 const holes = document.getElementById('holes');
-// Point in gun.png (fraction of width/height) that should sit under the crosshair: just above the rear sights.
-const SIGHT = { x: 0.486, y: 0 };
+// Point in gun.png (fraction of width/height) that should sit under the crosshair: the tip of the
+// front sight, where the barrel ends (pixel 162, 2 of 679 × 486).
+const SIGHT = { x: 162 / 679, y: 2 / 486 };
 gsap.set(gun, { transformOrigin: `${SIGHT.x * 100}% ${SIGHT.y * 100}%` });
 
 function gunPose(cx, cy) {
