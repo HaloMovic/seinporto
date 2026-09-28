@@ -16,6 +16,8 @@ function hideScreen(el, cb) {
 }
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
+// phones and tablets: no hover, and the on-screen keyboard covers half the page
+const touchOnly = matchMedia('(hover: none)').matches;
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 // 'hero' -> 'glitching' -> 'chat' -> 'confirm' -> 'aiming' -> 'shot'
@@ -289,10 +291,12 @@ function addMessage(text, who) {
   return el;
 }
 
+// on a phone, only bring the keyboard back if they were typing; otherwise it pops up over him
+let keepKeyboard = false;
 function setBusy(busy) {
   chatInput.disabled = busy;
   chatSend.disabled = busy;
-  if (!busy && state === 'chat') chatInput.focus();
+  if (!busy && state === 'chat' && (!touchOnly || keepKeyboard)) chatInput.focus();
 }
 
 const KEYWORD_RULES = [
@@ -334,6 +338,7 @@ chatForm.addEventListener('submit', async e => {
   e.preventDefault();
   const text = chatInput.value.trim();
   if (!text || state !== 'chat') return;
+  keepKeyboard = document.activeElement === chatInput;
   chatInput.value = '';
   setBusy(true);
   addMessage(text, 'user');
@@ -509,6 +514,7 @@ const confirmEl = document.getElementById('confirm');
 const btnNo = document.getElementById('btn-no');
 const btnYes = document.getElementById('btn-yes');
 const hint = document.getElementById('hint');
+if (touchOnly) hint.textContent = 'swipe up to see the portfolio ↑';
 
 let ignoreScrollUntil = 0;
 
@@ -537,7 +543,9 @@ function scrollAttempt() {
 addEventListener('wheel', e => { if (e.deltaY > 0 && !inChat(e.target)) scrollAttempt(); }, { passive: true });
 
 let touchStartY = null;
-addEventListener('touchstart', e => { touchStartY = inChat(e.target) ? null : e.touches[0].clientY; }, { passive: true });
+// dragging a video window or tapping a popup isn't a scroll
+const notAScroll = target => inChat(target) || target.closest('.float-win, .dialog-backdrop, .video-overlay');
+addEventListener('touchstart', e => { touchStartY = notAScroll(e.target) ? null : e.touches[0].clientY; }, { passive: true });
 addEventListener('touchmove', e => {
   if (touchStartY !== null && touchStartY - e.touches[0].clientY > 40) {
     touchStartY = null;
@@ -603,7 +611,7 @@ function startAiming() {
   state = 'aiming';
   setBusy(true);
   screens.intro.classList.add('aiming');
-  hint.textContent = 'click to shoot';
+  hint.textContent = touchOnly ? 'tap to shoot' : 'click to shoot';
   stopTalking();
   bubble.hidden = true;
   swapFigure(AIMED_AT_IMAGE);
@@ -1013,9 +1021,10 @@ document.getElementById('btn-enter').addEventListener('click', () => {
 /* ---------- built with: live line counts ---------- */
 document.querySelectorAll('.built-lines').forEach(async el => {
   try {
-    const res = await fetch(el.dataset.file);
+    // server.js isn't served to the browser, so the server reports its own count
+    const res = await fetch(el.dataset.lines || el.dataset.file);
     if (!res.ok) return;
-    const lines = (await res.text()).split('\n').length;
+    const lines = el.dataset.lines ? (await res.json()).lines : (await res.text()).split('\n').length;
     el.textContent = `${lines} lines`;
   } catch {}
 });
@@ -1187,8 +1196,10 @@ if (!reduceMotion) {
   });
 }
 
-// hover a letter: an image pops out of it and the neighbours make room
-if (matchMedia('(hover: hover) and (pointer: fine)').matches) {
+// hover a letter (tap it on a phone): an image pops out of it and the neighbours make room
+const popOn = matchMedia('(hover: hover) and (pointer: fine)').matches ? 'mouseenter' : 'click';
+document.getElementById('projects-hint').textContent = popOn === 'click' ? 'tap a letter to peek' : 'hover a letter to peek';
+{
   projectRows.forEach(({ row, contents }) => {
     const images = PROJECT_IMAGES[row.dataset.project] || [];
     const gaps = contents.map(() => 0);
@@ -1201,7 +1212,7 @@ if (matchMedia('(hover: hover) and (pointer: fine)').matches) {
 
     contents.forEach((content, i) => {
       if (!content.textContent.trim()) return;
-      content.addEventListener('mouseenter', () => {
+      content.addEventListener(popOn, () => {
         if (content.querySelector('.project-letter__image')) return;
         let pop;
         if (images.length) {

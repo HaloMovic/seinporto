@@ -1,4 +1,5 @@
 require('dotenv').config();
+const fs = require('fs');
 const path = require('path');
 const express = require('express');
 
@@ -30,6 +31,10 @@ Respond with JSON only: {"category": "<one of the keys above>"}`;
 
 app.use(express.json({ limit: '4kb' }));
 app.use(express.static(path.join(__dirname, 'public'), { dotfiles: 'deny' }));
+
+// the "built with" section shows how long this file is, without serving the file itself
+const SERVER_LINES = fs.readFileSync(__filename, 'utf8').split('\n').length;
+app.get('/api/server-lines', (req, res) => res.json({ lines: SERVER_LINES }));
 
 app.post('/api/classify', async (req, res) => {
   const message = String(req.body?.message ?? '').trim().slice(0, 300);
