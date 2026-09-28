@@ -1,7 +1,7 @@
 /* ---------- secret: fight him, Undertale: Last Breath style ---------- */
 // Three phases. He dodges everything until he's tired; the hit that finally lands doesn't end it,
-// he refuses and comes back harder. In phase 3 he throws one last attack, and only then can you
-// finish him or spare him.
+// he refuses and comes back harder. Phase 3 gives you no turns: attack after attack, with a
+// breather every three, then one last attack, and only then can you finish him or spare him.
 // Opens with the Konami code (↑ ↑ ↓ ↓ ← → ← → B A), "/fight" in the chat,
 // or by tapping "still here" in the footer five times.
 //
@@ -29,25 +29,29 @@ const MAX_HP = 60;
 const SPEED = 110;                       // the heart, px/s
 const SOUL_GRAVITY = 900, JUMP = 250, MAX_FALL = 420;
 const HIT_R = 4.5;                       // the heart's hitbox radius
-const TIRED_AFTER = { 1: 4, 2: 5, 3: 5 }; // his turns before a hit can land (phase 3: before his last attack)
+const TIRED_AFTER = { 1: 8, 2: 9 };       // his turns before a hit can land
+const BREATHER_EVERY = 3;                // phase 3: attacks between heals
+const BREATHER_HEAL = Math.round(MAX_HP * 0.45);
 const FALLBACK_BPM = 120;                // the beat attacks keep when a track is missing or still loading
 
 const LINES = {
   intro: ["it's a beautiful day on my portfolio.", 'the scroll is locked. the guestbook is open.', 'on days like these, visitors like you...', '...should be signing my guestbook.', 'but you wanted a fight. so.'],
   1: {
-    turns: ['ready?', "i'm not gonna make this easy.", 'dodge this.', 'you really came back for this?'],
+    // one before each turn, in the order of STAGE_ATTACKS
+    turns: ['ready?', "i'm not gonna make this easy.", 'dodge this.', 'you really came back for this?', 'watch the floor. and the ceiling.', 'okay. two at once.', 'my pencil never runs out.', "heh. you're not bad."],
     tired: 'okay... one more.',
     fall: ['...heh.', "guess that's it, huh?"],
   },
   2: {
     start: ['...nah.', "i'm not done.", 'not while this site is still up.'],
-    turns: ['you think one hit was enough?', "i've been up since 7am. i can do this all day.", "let's flip things around.", 'hear that? that\'s my song.', 'still here.'],
+    turns: ['you think one hit was enough?', "i've been up since 7am. i can do this all day.", "let's flip things around.", 'hear that? that\'s my song.', 'still here.', 'blink and you miss it.', 'left. right. both.', "don't get dizzy.", 'one more. then another.'],
     tired: "heh... can't... keep this up...",
     fall: ['...w-wait.', "that's not..."],
   },
   3: {
     start: ['...', 'something is holding me up.', "and it doesn't want you to win."],
-    turns: ['this is my last breath.', 'the screen is mine now.', 'keep up with the beat.', "i'm not letting you through.", 'just... give up.'],
+    // one before each attack, in the order of STAGE_ATTACKS[3]
+    turns: ['this is my last breath.', 'the screen is mine now.', 'round and round.', 'keep up with the beat.', "there's only one way out.", "i'm not letting you through.", 'which way is down?', 'just... give up.', 'no more room.'],
     final: ['alright.', 'this is it. my special attack.', 'survive this and the site is yours.'],
   },
 };
@@ -84,6 +88,8 @@ const stage = document.getElementById('boss-stage');
 const fx = document.getElementById('boss-fx');
 const fctx = fx.getContext('2d');
 const flashEl = document.getElementById('boss-flash');
+const cutEl = document.getElementById('boss-cut');
+const cutText = document.getElementById('boss-cut-text');
 const spriteEl = document.getElementById('boss-sprite');
 const slashEl = document.getElementById('boss-slash');
 const dmgEl = document.getElementById('boss-dmg');
@@ -246,6 +252,16 @@ const sfx = {
   slam: () => tone(70, 0.2, { vol: 0.09, to: 35 }),
   rise: () => tone(900, 0.06, { vol: 0.03, to: 1400 }),
   power: () => tone(60, 1.6, { type: 'sawtooth', vol: 0.05, to: 900 }),
+  // the screen snapping to black
+  cut() {
+    tone(2200, 0.025, { vol: 0.04 });
+    hiss(0.06, { vol: 0.08, filter: 'highpass', freq: 4000 });
+  },
+  // your SOUL beating in the dark
+  thump() {
+    tone(58, 0.16, { type: 'sine', vol: 0.14, to: 40 });
+    setTimeout(() => tone(52, 0.13, { type: 'sine', vol: 0.09, to: 38 }), 160);
+  },
   glitch: () => { for (let i = 0; i < 5; i++) setTimeout(() => tone(gsap.utils.random(200, 2000), 0.03, { vol: 0.03 }), i * 40); },
 };
 
@@ -346,12 +362,21 @@ async function startMusic(stageNo) {
   Object.assign(music, { src, gain, analyser, bins: new Uint8Array(analyser.frequencyBinCount), start: at, spb, offset: beat.offset, stage: stageNo });
   loadTrack(stageNo + 1); // get the next phase ready while this one plays
 }
-function stopMusic() {
+// slow: the track winds down like a tape running out
+function stopMusic(slow = false) {
   music.token++;
   if (!music.src) return;
-  const { src, gain } = music, ctx = getAudioCtx();
-  gain.gain.setTargetAtTime(0, ctx.currentTime, 0.05);
-  src.stop(ctx.currentTime + 0.3);
+  const { src, gain } = music, t = getAudioCtx().currentTime;
+  if (slow) {
+    src.playbackRate.setValueAtTime(1, t);
+    src.playbackRate.linearRampToValueAtTime(0.15, t + 1.3);
+    gain.gain.setValueAtTime(gain.gain.value, t);
+    gain.gain.linearRampToValueAtTime(0, t + 1.3);
+    src.stop(t + 1.35);
+  } else {
+    gain.gain.setTargetAtTime(0, t, 0.05);
+    src.stop(t + 0.3);
+  }
   music.src = null;
 }
 
@@ -692,27 +717,63 @@ async function phaseBreak(next) {
   onKey = null;
   fight.phase = 'text';
   if (!await speeches(LINES[next - 1].fall)) return;
-  stopMusic();
-  // a beat of nothing, then he refuses
-  await gsap.to(stage, { opacity: 0.15, duration: 0.6 });
+  // the song winds down, he sinks, and the screen snaps to black
+  stopMusic(true);
+  await gsap.to(spriteEl, { y: 10, scaleY: 0.94, duration: 1.3, ease: 'power2.in' });
+  if (run !== session) return;
+  gsap.set(cutEl, { opacity: 1 });
+  sfx.cut();
   await sleep(900);
   if (run !== session) return;
-  sfx.power();
-  glitch(next === 3 ? 3 : 1);
-  showSprite(next);
-  gsap.fromTo(spriteEl, { scale: 1.15, filter: 'brightness(4)' }, { scale: 1, filter: 'brightness(1)', duration: 1.1, ease: 'power2.out', clearProps: 'filter' });
-  shake(10);
-  await gsap.to(stage, { opacity: 1, duration: 0.3 });
+
+  // in the dark: only your SOUL, beating
+  gsap.set(flashEl, { opacity: 1, scale: 1.6 });
+  for (let i = 0; i < 3; i++) {
+    sfx.thump();
+    await gsap.fromTo(flashEl, { scale: 1.9 }, { scale: 1.6, duration: 0.55, ease: 'power2.out' });
+    if (run !== session) return;
+  }
   Object.assign(fight, { stage: next, turnsInStage: 0, tired: false, php: MAX_HP, kr: 0 });
   bossEl.dataset.stage = next;
   fight.checkpoint = fight.items.map(it => ({ ...it }));
   updateStats();
+  showSprite(next);
+  gsap.set(spriteEl, { y: 0, scaleY: 1 });
+  if (!await darkLine(next === 2 ? '* But it refused.' : '* But something else\nrefused for him.')) return;
+
+  // it all comes back at once, in a white flash
+  sfx.power();
+  await gsap.fromTo(flashEl, { x: -2 }, { x: 2, duration: 0.05, repeat: 23, yoyo: true, ease: 'none' });
+  if (run !== session) return;
+  gsap.set(flashEl, { opacity: 0, x: 0, scale: 1 });
+  cutText.textContent = '';
+  gsap.set(cutEl, { backgroundColor: '#fff' });
+  gsap.to(cutEl, { opacity: 0, duration: 0.8, ease: 'power2.in', clearProps: 'backgroundColor' });
+  glitch(next === 3 ? 3 : 1);
+  gsap.fromTo(spriteEl, { scale: 1.15, filter: 'brightness(4)' }, { scale: 1, filter: 'brightness(1)', duration: 1.1, ease: 'power2.out', clearProps: 'filter' });
+  shake(10);
   startMusic(next);
+  await sleep(900);
   if (!await speeches(LINES[next].start)) return;
   sfx.heal();
-  await type(next === 2 ? '* SEIN refuses.\n* Your HP was restored.' : '* SEIN is still here.\n* Something else is too.\n* Your HP was restored.');
+  await type(next === 2 ? '* SEIN is back on his feet.\n* Your HP was restored.' : "* Something else is here.\n* It won't give you a turn.\n* Your HP was restored.");
   if (run !== session) return;
-  showMenu();
+  if (next === 3) gauntlet();
+  else showMenu();
+}
+
+// a line typed out in the dark between phases; moves on after a moment, or on Z
+async function darkLine(text) {
+  const run = session;
+  for (let i = 1; i <= text.length; i++) {
+    if (run !== session) return false;
+    cutText.textContent = text.slice(0, i);
+    if (text[i - 1].trim() && i % 2) sfx.text();
+    await sleep(text[i - 1] === '\n' ? 200 : 60);
+  }
+  await Promise.race([sleep(1600), waitOk()]);
+  waiter = null;
+  return run === session;
 }
 
 function glitch(times = 1) {
@@ -741,29 +802,64 @@ async function enemyTurn() {
   onKey = null;
   ++typeToken;
   boxText.textContent = '';
-  const lines = LINES[fight.stage];
-  const final = fight.stage === 3 && fight.turnsInStage > TIRED_AFTER[3];
-  if (final) {
-    if (!await speeches(lines.final)) return;
-  } else {
-    await speech(fight.tired ? lines.tired : lines.turns[(fight.turnsInStage - 1) % lines.turns.length]);
+  // after phase 3 he has nothing left to throw
+  if (fight.exhausted) {
+    await type('* SEIN is too tired to attack.');
+    if (run === session) showMenu();
+    return;
   }
+  const lines = LINES[fight.stage];
+  await speech(fight.tired ? lines.tired : lines.turns[(fight.turnsInStage - 1) % lines.turns.length]);
   if (run !== session) return;
 
   const list = STAGE_ATTACKS[fight.stage];
-  const name = final ? 'final' : list[(fight.turnsInStage - 1) % list.length];
-  const survived = await runAttack(name);
+  const survived = await runAttack(list[(fight.turnsInStage - 1) % list.length]);
   if (run !== session) return;
   if (!survived) return gameOver();
-
-  if (final) {
-    fight.exhausted = true;
-    await type('* SEIN is out of breath.');
-    if (run !== session) return;
-  } else if (fight.stage < 3 && fight.turnsInStage >= TIRED_AFTER[fight.stage]) {
-    fight.tired = true;
-  }
+  if (fight.turnsInStage >= TIRED_AFTER[fight.stage]) fight.tired = true;
   showMenu();
+}
+
+// phase 3: no menu between attacks. every few attacks you get a breather, then his last attack
+async function gauntlet() {
+  const run = session;
+  onKey = null;
+  const list = STAGE_ATTACKS[3], lines = LINES[3];
+  for (let i = 0; i < list.length; i++) {
+    fight.turn++;
+    fight.turnsInStage++;
+    fight.phase = 'enemy';
+    ++typeToken;
+    boxText.textContent = '';
+    await speech(lines.turns[i % lines.turns.length]);
+    if (run !== session) return;
+    const survived = await runAttack(list[i]);
+    if (run !== session) return;
+    if (!survived) return gameOver();
+    if ((i + 1) % BREATHER_EVERY === 0) {
+      await breather();
+      if (run !== session) return;
+    }
+  }
+  fight.phase = 'enemy';
+  if (!await speeches(lines.final)) return;
+  const survived = await runAttack('final');
+  if (run !== session) return;
+  if (!survived) return gameOver();
+  fight.exhausted = true;
+  await type('* SEIN is out of breath.');
+  if (run !== session) return;
+  showMenu();
+}
+
+async function breather() {
+  const before = fight.php;
+  fight.php = Math.min(MAX_HP, fight.php + BREATHER_HEAL);
+  fight.kr = 0;
+  updateStats();
+  sfx.heal();
+  type(`* The glitching stops for a moment.\n* ${fight.php === MAX_HP ? 'Your HP was maxed out.' : `You recovered ${fight.php - before} HP!`}`, false);
+  await sleep(1800);
 }
 
 /* ---------- the bullet board: everything he throws at you ---------- */
@@ -1029,6 +1125,37 @@ function spinner({ arms = 2, step = 30, beats = 16, warn = 2, dir = () => 1 }) {
   });
 }
 
+// a ring of bones closing in on where the heart is, collapsing `beats` after it appears.
+// There's one way out, on the side with the most room, and it slowly turns.
+function closingRing({ n = 16, gap = 3, r0 = 80, beats = 3, spin = 1 }) {
+  const { w, h } = G.box, cx = G.heart.x, cy = G.heart.y, born = G.t, T = beats * G.spb;
+  const toMiddle = Math.hypot(w / 2 - cx, h / 2 - cy) > 10 ? Math.atan2(h / 2 - cy, w / 2 - cx) : rand(0, Math.PI * 2);
+  const step = Math.PI * 2 / n;
+  // the gap's first bone slot, so the gap is centred on the way to the middle
+  const turn0 = toMiddle + rand(-0.5, 0.5) - (gap - 1) * step / 2;
+  let r = r0, turn = turn0;
+  sfx.bone();
+  G.bullets.push({
+    update() {
+      const p = (G.t - born) / T;
+      r = r0 * (1 - p);
+      turn = turn0 + spin * p * Math.PI * 0.35;
+      if (p >= 1) this.dead = true;
+    },
+    // each bone lies along the ring and is as long as the space it has, so only the gap is open
+    each(fn) {
+      const len = Math.max(8, r * step * 1.08);
+      for (let k = gap; k < n; k++) {
+        const a = turn + k * step;
+        if (fn(cx + Math.cos(a) * r, cy + Math.sin(a) * r, a + Math.PI / 2, len)) return true;
+      }
+      return false;
+    },
+    hurts() { return this.each((x, y, a, len) => rotHit(x, y, len, 7, a)); },
+    draw(c) { this.each((x, y, a, len) => { drawTurned(c, x, y, a, { x: 0, y: 0, w: len, h: 7, color: 'white' }); }); },
+  });
+}
+
 // the old doodle attacks, now in any box size
 function mover({ x, y, vx = 0, vy = 0, w, h, draw }) {
   G.bullets.push({
@@ -1131,9 +1258,12 @@ const api = {
   get spb() { return G.spb; },
   until: t => new Promise(r => G.waits.push({ at: t, r })),
   wait: s => api.until(G.t + s),
-  sync(sub = 1) {
-    G.cursor = gridAfter(G.t, sub);
-    return api.until(G.cursor);
+  // after a cut, the screen comes back on this beat, with the next attack already set up
+  async sync(sub = 1) {
+    const lifting = G.cutting;
+    G.cursor = gridAfter(G.t + (lifting ? 0.3 : 0), sub);
+    await api.until(G.cursor);
+    if (lifting) uncut();
   },
   beat(n = 1) {
     G.cursor += n * G.spb;
@@ -1142,7 +1272,30 @@ const api = {
     return api.until(G.cursor);
   },
   at: n => G.cursor + n * G.spb,
-  box: (w, h) => setBox(w, h),
+  // in the dark the box just snaps to its new size, and the heart to its middle
+  box(w, h) {
+    if (!G.cutting) return setBox(w, h);
+    gsap.killTweensOf(box, 'width,height');
+    gsap.set(box, { width: Math.min(w, stage.clientWidth - 8) + 8, height: h + 8 });
+    G.box.w = box.clientWidth;
+    G.box.h = box.clientHeight;
+    Object.assign(G.heart, { x: G.box.w / 2, y: G.box.h / 2, v: 0, grounded: false });
+    return Promise.resolve();
+  },
+  // Sans-style: the screen snaps to black and everything on it is gone; the next attack's
+  // box() and sync() set it up in the dark and bring it back
+  cut() {
+    G.cutting = true;
+    gsap.set(cutEl, { opacity: 1 });
+    sfx.cut();
+    G.bullets = [];
+    if (G.flipped) {
+      G.flipped = false;
+      gsap.killTweensOf(world, 'rotation');
+      gsap.set(world, { rotation: 0 });
+    }
+    api.soul('red');
+  },
   soul(kind, grav = 'down') {
     G.soul = kind;
     G.grav = grav;
@@ -1176,6 +1329,7 @@ const api = {
   spikes,
   boneRing,
   spinner,
+  closingRing,
   // from a point on a ring around the box, aimed at the heart
   aimedBlaster(size = 1, fireAt) {
     const { w, h } = G.box;
@@ -1296,6 +1450,32 @@ const ATTACKS = {
     s.soul('red');
     await s.beat(1);
   },
+  // bones from both walls, along the floor, and now and then one hanging from the ceiling
+  async pincer(s) {
+    await s.box(240, 140);
+    s.soul('blue', 'down');
+    await s.sync();
+    for (let i = 0; i < 10; i++) {
+      s.floorBone({ from: i % 2 ? 'left' : 'right', height: 22 + (i % 3) * 8, beats: 2 });
+      if (i % 4 === 1) s.floorBone({ from: 'left', edge: 'top', height: 44, beats: 2 });
+      await s.beat(1);
+    }
+    s.soul('red');
+    await s.beat(4);
+  },
+  // the old doodles: pencils falling and code flying across, all on the beat
+  async doodles(s) {
+    await s.box(200, 150);
+    s.soul('red');
+    await s.sync();
+    const rain = Promise.all([s.rain('pencils', 16, 0.5), s.rain('code', 16, 1)]);
+    for (let i = 0; i < 3; i++) {
+      await s.beat(4);
+      s.aimedBlaster(0.7, s.at(2));
+    }
+    await rain;
+    await s.wait(1);
+  },
 
   // phase 2: blue and orange, the screen turns over
   async flipRain(s) {
@@ -1373,6 +1553,21 @@ const ATTACKS = {
     }
     s.soul('red');
     await tools;
+  },
+  // walls from both sides at once with their gaps out of line, every third one blue or orange,
+  // and a row of blasters over the top every bar
+  async crossfire(s) {
+    await s.box(240, 150);
+    s.soul('red');
+    await s.sync();
+    for (let i = 0; i < 12; i++) {
+      const from = i % 2 ? 'left' : 'right';
+      if (i % 3 === 2) s.floorBone({ from, edge: 'full', color: i % 2 ? 'blue' : 'orange', beats: 2 });
+      else s.gapWall({ from, gap: 0.5 + Math.sin(i * 1.7) * 0.32, size: 46, beats: 2 });
+      if (i % 4 === 3) s.blasterRow('top', 5, Math.floor(rand(0, 5)), s.at(2));
+      await s.beat(1);
+    }
+    await s.beat(4);
   },
 
   // phase 3: it isn't only him anymore
@@ -1452,19 +1647,83 @@ const ATTACKS = {
     }
     await s.beat(3);
   },
-
-  // his last attack: no menu in between, until he runs out
-  async final(s) {
-    s.glitch(2);
-    await ATTACKS.arrays(s);
-    await ATTACKS.slams(s);
+  // three long bones turning round the middle, reversing every four beats,
+  // while bones are thrown at wherever you're standing
+  async vortex(s) {
+    await s.box(180, 180);
+    s.soul('red');
     s.glitch();
-    await ATTACKS.spiral(s);
-    await ATTACKS.tunnel(s);
-    s.glitch(3);
-    await s.box(150, 150);
+    await s.sync();
+    s.spinner({ arms: 3, step: 24, beats: 18, dir: b => (Math.floor(b / 4) % 2 ? -1 : 1) });
+    await s.beat(3);
+    for (let i = 0; i < 16; i++) {
+      if (i % 2 === 0) s.boneRing(3, 2, i * 0.5);
+      if (i % 4 === 3) s.aimedBlaster(0.5, s.at(2));
+      await s.beat(1);
+    }
+    await s.beat(2);
+  },
+  // rings of bones close in on you, each with one way out; they come faster, and the floor lights up
+  async noose(s) {
+    await s.box(200, 170);
     s.soul('red');
     await s.sync();
+    const bands = s.rain('bands', 17, 4);
+    for (let i = 0; i < 6; i++) {
+      const beats = i < 3 ? 3 : 2.5;
+      s.closingRing({ beats, spin: i % 2 ? 1 : -1 });
+      await s.beat(beats);
+    }
+    await bands;
+    await s.beat(2);
+  },
+  // gravity yanks a new way every bar, the wall it throws you at grows spikes,
+  // and something is thrown at where you landed
+  async quake(s) {
+    await s.box(160, 160);
+    await s.sync();
+    let dir = 'down';
+    for (let i = 0; i < 7; i++) {
+      dir = pick(Object.keys(DIRS).filter(d => d !== dir));
+      s.slam(dir);
+      s.spikes({ side: dir, height: 22, rise: s.at(1.5), stay: s.spb * 0.6 });
+      await s.beat(1);
+      if (i % 2) s.aimedBlaster(0.6, s.at(1.5));
+      else s.boneRing(4, 1.5, i);
+      await s.beat(2);
+    }
+    s.soul('red');
+    await s.beat(2);
+  },
+  // the box closes in a bar at a time while walls, blue and orange bones and blasters keep coming
+  async squeeze(s) {
+    const sizes = [[240, 170], [210, 150], [180, 135], [150, 120], [125, 110]];
+    await s.box(...sizes[0]);
+    s.soul('red');
+    await s.sync();
+    for (let i = 0; i < 20; i++) {
+      if (i && i % 4 === 0) {
+        s.box(...sizes[i / 4]);
+        s.shake(4);
+      }
+      if (i % 3 === 2) s.floorBone({ from: i % 2 ? 'left' : 'right', edge: 'full', color: i % 6 === 2 ? 'blue' : 'orange', beats: 2 });
+      else s.gapWall({ from: 'right', gap: 0.5 + Math.sin(i * 1.3) * 0.3, size: 42, beats: 2 });
+      if (i % 4 === 2) s.aimedBlaster(0.5, s.at(2));
+      await s.beat(1);
+    }
+    await s.beat(4);
+  },
+
+  // his last attack: one thing after another with a cut to black between each, until he runs out
+  async final(s) {
+    for (const part of ['arrays', 'slams', 'vortex', 'spiral', 'tunnel']) {
+      s.cut();
+      await ATTACKS[part](s);
+    }
+    s.cut();
+    await s.box(150, 150);
+    await s.sync();
+    s.glitch(3);
     for (let i = 0; i < 3; i++) {
       s.cross(s.at(2));
       await s.beat(1);
@@ -1472,6 +1731,9 @@ const ATTACKS = {
       await s.beat(3);
     }
     // everything he has left: half the screen at a time
+    s.cut();
+    await s.box(170, 150);
+    await s.sync();
     s.glitch(2);
     for (let i = 0; i < 6; i++) {
       s.half(i % 2 ? 'right' : 'left', s.at(3));
@@ -1480,10 +1742,12 @@ const ATTACKS = {
     await s.beat(3);
   },
 };
+// one entry per turn; a list is several attacks in one turn, with a cut to black between them
 const STAGE_ATTACKS = {
-  1: ['slide', 'blasters', 'burst', 'gaps', 'slams'],
-  2: ['flipRain', 'spinner', 'colors', 'snake', 'ring', 'gravity'],
-  3: ['arrays', 'chase', 'tunnel', 'grid', 'storm'], // then 'final', which ends in the spiral
+  1: ['slide', 'blasters', 'burst', 'gaps', 'pincer', ['slide', 'slams'], 'doodles', ['burst', 'blasters']],
+  2: ['flipRain', 'spinner', 'colors', 'snake', 'ring', ['gravity', 'colors'], 'crossfire', ['spinner', 'snake'], ['ring', 'flipRain']],
+  // back to back, a breather after every BREATHER_EVERY; then 'final'
+  3: ['arrays', 'chase', 'vortex', 'tunnel', 'noose', 'grid', 'quake', 'storm', 'squeeze'],
 };
 
 /* ---------- the engine: runs while he attacks ---------- */
@@ -1586,6 +1850,11 @@ function render() {
   fctx.restore();
 }
 
+function uncut() {
+  G.cutting = false;
+  gsap.set(cutEl, { opacity: 0 });
+}
+
 async function runAttack(name) {
   const run = session;
   fight.phase = 'dodge';
@@ -1594,7 +1863,7 @@ async function runAttack(name) {
   const o = worldOffset(box);
   Object.assign(G, {
     running: true, last: performance.now(), bullets: [], waits: [],
-    soul: 'red', grav: 'down', flipped: false, hurtCd: 0, lastOuch: -Infinity, touchJump: false,
+    soul: 'red', grav: 'down', flipped: false, cutting: false, hurtCd: 0, lastOuch: -Infinity, touchJump: false,
     box: { x: o.x + 4, y: o.y + 4, w: box.clientWidth, h: box.clientHeight },
   });
   startClock();
@@ -1606,10 +1875,19 @@ async function runAttack(name) {
   // centre the heart once the box has its first size
   setTimeout(() => { if (G.running) { G.heart.x = box.clientWidth / 2; G.heart.y = box.clientHeight / 2; } }, 320);
 
-  const outcome = await Promise.race([ATTACKS[name](api).then(() => 'done'), died.then(() => 'dead')]);
+  // a turn can be several attacks back to back, with a cut to black between them
+  const parts = [].concat(name);
+  const play = async () => {
+    for (let i = 0; i < parts.length && G.running; i++) {
+      if (i) api.cut();
+      await ATTACKS[parts[i]](api);
+    }
+  };
+  const outcome = await Promise.race([play().then(() => 'done'), died.then(() => 'dead')]);
   G.running = false;
   cancelAnimationFrame(G.raf);
   fctx.clearRect(0, 0, fx.width, fx.height);
+  uncut();
   if (G.flipped) api.flip(false);
   if (run !== session || outcome === 'dead') return false;
   setMode('text');
@@ -1740,7 +2018,8 @@ function resetStage(stageNo, items) {
   endEl.hidden = true;
   speechEl.hidden = true;
   hpEl.hidden = true;
-  gsap.set([spriteEl, box, world], { clearProps: 'all' });
+  gsap.set([spriteEl, box, world, cutEl, flashEl], { clearProps: 'all' });
+  cutText.textContent = '';
   showSprite(stageNo);
   updateStats();
   setMode('text');
@@ -1805,7 +2084,7 @@ function closeBoss() {
   held.clear();
   drag = null;
   stopMusic();
-  gsap.killTweensOf([stage, flashEl, box, barEl, spriteEl, enemyEl, slashEl, dmgEl, hpFill, endTitle, endActions, endHeart, world]);
+  gsap.killTweensOf([stage, flashEl, box, barEl, spriteEl, enemyEl, slashEl, dmgEl, hpFill, endTitle, endActions, endHeart, world, cutEl]);
   gsap.set(enemyEl, { clearProps: 'all' });
   bossEl.classList.remove('glitching');
   bossEl.hidden = true;
@@ -1821,7 +2100,8 @@ againBtn.addEventListener('click', async () => {
   await intro();
   if (run !== session) return;
   startMusic(stageNo);
-  showMenu();
+  if (stageNo === 3) gauntlet();
+  else showMenu();
 });
 document.getElementById('boss-leave').addEventListener('click', closeBoss);
 document.getElementById('boss-x').addEventListener('click', closeBoss);

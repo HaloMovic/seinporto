@@ -854,6 +854,9 @@ html.boss-open,html.boss-open body{overflow:hidden}
 @media(prefers-reduced-motion:reduce){.boss::before{display:none}.boss-box{box-shadow:none}}
 .boss-flash{position:absolute;left:50%;top:50%;z-index:3;width:27px;height:24px;margin:-12px 0 0 -13px;opacity:0;pointer-events:none;display:flex}
 .boss-world{position:absolute;inset:0;display:grid;place-items:center}
+/* the sudden black between his attacks, and the dark between phases */
+.boss-cut{position:absolute;inset:0;z-index:3;display:grid;place-items:center;background:#000;opacity:0;pointer-events:none}
+.boss-cut p{margin-top:120px;font-size:clamp(22px,4.2vw,30px);line-height:1.12;white-space:pre-line;text-align:center}
 .boss-fx{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none}
 .boss-arena{position:relative;width:100%;height:208px;display:flex;align-items:flex-end;justify-content:center}
 .boss.glitching .boss-world{animation:boss-glitch .36s steps(4) 1}
