@@ -466,36 +466,40 @@ res.json({ category: Object.hasOwn(CATEGORIES, category) ? category : 'unknown' 
 
 </main>
 
-<!-- secret: an Undertale-style fight. ↑ ↑ ↓ ↓ ← → ← → B A, "/fight" in the chat, or tap "still here" in the footer 5 times -->
+<!-- secret: a three-phase fight, Undertale: Last Breath style. ↑ ↑ ↓ ↓ ← → ← → B A, "/fight" in the chat, or tap "still here" in the footer 5 times -->
 <section class="boss" id="boss" hidden role="dialog" aria-modal="true" aria-label="Secret fight">
-  <button type="button" class="boss-x" id="boss-x" aria-label="Leave the fight">✕</button>
-  <div class="boss-flash" id="boss-flash" aria-hidden="true"></div>
-  <div class="boss-stage" id="boss-stage">
-    <div class="boss-enemy" id="boss-enemy">
-      <img class="boss-sprite" id="boss-sprite" alt="Sein, ready to fight">
-      <i class="boss-slash" id="boss-slash" aria-hidden="true"></i>
-      <p class="boss-dmg" id="boss-dmg" aria-live="polite"></p>
-      <div class="boss-hp" id="boss-hp" hidden><i></i></div>
-      <div class="boss-bubble" id="boss-bubble" hidden><p></p></div>
+  <div class="boss-world" id="boss-world">
+    <div class="boss-stage" id="boss-stage">
+      <div class="boss-enemy" id="boss-enemy">
+        <img class="boss-sprite" id="boss-sprite" alt="Sein, ready to fight">
+        <i class="boss-slash" id="boss-slash" aria-hidden="true"></i>
+        <p class="boss-dmg" id="boss-dmg" aria-live="polite"></p>
+        <div class="boss-hp" id="boss-hp" hidden><i></i></div>
+        <div class="boss-bubble" id="boss-bubble" hidden><p></p></div>
+      </div>
+      <div class="boss-arena">
+        <div class="boss-box" id="boss-box">
+          <p class="boss-text" id="boss-text" aria-live="polite"></p>
+          <ul class="boss-options" id="boss-options"></ul>
+          <div class="boss-target" id="boss-target"><i class="boss-bar" id="boss-bar"></i></div>
+        </div>
+      </div>
+      <div class="boss-stats">
+        <span>YOU</span><span>LV 1</span>
+        <span class="boss-hp-label">HP</span><span class="boss-php"><i id="boss-php-bar"></i><b id="boss-kr-bar"></b></span><span class="boss-hp-label">KR</span><span id="boss-php-num">60 / 60</span>
+      </div>
+      <div class="boss-menu" id="boss-menu">
+        <button type="button" data-i="0"><span class="boss-heart"></span>FIGHT</button>
+        <button type="button" data-i="1"><span class="boss-heart"></span>ACT</button>
+        <button type="button" data-i="2"><span class="boss-heart"></span>ITEM</button>
+        <button type="button" data-i="3"><span class="boss-heart"></span>MERCY</button>
+      </div>
+      <p class="boss-help" id="boss-help"></p>
     </div>
-    <div class="boss-box" id="boss-box">
-      <p class="boss-text" id="boss-text" aria-live="polite"></p>
-      <ul class="boss-options" id="boss-options"></ul>
-      <div class="boss-target" id="boss-target"><i class="boss-bar" id="boss-bar"></i></div>
-      <canvas class="boss-board" id="boss-board"></canvas>
-    </div>
-    <div class="boss-stats">
-      <span>YOU</span><span>LV 1</span>
-      <span class="boss-hp-label">HP</span><span class="boss-php"><i id="boss-php-bar"></i></span><span id="boss-php-num">20 / 20</span>
-    </div>
-    <div class="boss-menu" id="boss-menu">
-      <button type="button" data-i="0"><span class="boss-heart"></span>FIGHT</button>
-      <button type="button" data-i="1"><span class="boss-heart"></span>ACT</button>
-      <button type="button" data-i="2"><span class="boss-heart"></span>ITEM</button>
-      <button type="button" data-i="3"><span class="boss-heart"></span>MERCY</button>
-    </div>
-    <p class="boss-help" id="boss-help"></p>
+    <canvas class="boss-fx" id="boss-fx" aria-hidden="true"></canvas>
   </div>
+  <div class="boss-flash" id="boss-flash" aria-hidden="true"></div>
+  <button type="button" class="boss-x" id="boss-x" aria-label="Leave the fight">✕</button>
   <div class="boss-end" id="boss-end" hidden>
     <div class="boss-end-heart" id="boss-end-heart" aria-hidden="true"></div>
     <p class="boss-end-title" id="boss-end-title"></p>

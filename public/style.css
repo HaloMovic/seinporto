@@ -844,7 +844,21 @@ html.boss-open,html.boss-open body{overflow:hidden}
   touch-action:none;user-select:none;-webkit-user-select:none;
 }
 .boss[hidden]{display:none}
-.boss-flash{position:absolute;left:50%;top:50%;width:27px;height:24px;margin:-12px 0 0 -13px;opacity:0;pointer-events:none;display:flex}
+.boss-flash{position:absolute;left:50%;top:50%;z-index:3;width:27px;height:24px;margin:-12px 0 0 -13px;opacity:0;pointer-events:none;display:flex}
+.boss-world{position:absolute;inset:0;display:grid;place-items:center}
+.boss-fx{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none}
+.boss-arena{position:relative;width:100%;height:208px;display:flex;align-items:flex-end;justify-content:center}
+.boss.glitching .boss-world{animation:boss-glitch .36s steps(4) 1}
+@keyframes boss-glitch{
+  0%{filter:invert(1);translate:-10px 0}
+  25%{filter:drop-shadow(6px 0 #ff2a55) drop-shadow(-6px 0 #00d5ff);translate:12px 0;clip-path:inset(20% 0 30% 0)}
+  50%{filter:invert(1) hue-rotate(90deg);translate:-6px 0;clip-path:none}
+  100%{filter:none;translate:0 0}
+}
+/* until the phase sprites exist, the placeholder hints at each phase */
+.boss-sprite.fallback[data-stage="2"]{filter:sepia(1) saturate(4) hue-rotate(-50deg) drop-shadow(0 0 10px #ff2a2a)}
+.boss-sprite.fallback[data-stage="3"]{animation:boss-p3 .8s steps(2) infinite}
+@keyframes boss-p3{0%{filter:drop-shadow(3px 0 #ff2a55) drop-shadow(-3px 0 #00d5ff)}50%{filter:invert(1) drop-shadow(0 0 10px #6cf)}}
 .boss-flash svg{display:block;width:100%;height:100%}
 .boss-x{position:absolute;top:12px;right:12px;z-index:2;width:40px;height:40px;border:2px solid #fff;border-radius:0;background:#000;color:#fff;font:400 24px/1 'VT323',ui-monospace,monospace;cursor:pointer}
 .boss-x:hover,.boss-x:focus-visible{border-color:#ffff00;color:#ffff00;outline:none}
@@ -882,15 +896,15 @@ html.boss-open,html.boss-open body{overflow:hidden}
 }
 .boss-target::after{content:"";position:absolute;left:50%;top:0;bottom:0;width:4px;margin-left:-2px;background:rgba(255,255,255,.8)}
 .boss-bar{position:absolute;top:-6px;bottom:-6px;left:0;width:12px;margin-left:-6px;background:#fff;border:3px solid #000;outline:2px solid #fff;z-index:1}
-.boss-board{position:absolute;inset:0;width:100%;height:100%;display:none}
 .boss-box.mode-options .boss-text,.boss-box.mode-target .boss-text,.boss-box.mode-dodge .boss-text{display:none}
 .boss-box:not(.mode-options) .boss-options{display:none}
 .boss-box.mode-target .boss-target{display:block}
-.boss-box.mode-dodge .boss-board{display:block}
 .boss-stats{display:flex;align-items:center;gap:14px;width:100%;font-size:26px;line-height:1}
 .boss-hp-label{margin-left:12px;font-size:18px}
-.boss-php{display:block;width:44px;height:20px;background:#ff2020}
+.boss-php{display:flex;width:70px;height:20px;background:#ff2020}
 .boss-php i{display:block;height:100%;width:100%;background:#ffff00}
+.boss-php b{display:block;height:100%;width:0;background:#ff00ff}
+#boss-php-num.kr{color:#ff00ff}
 .boss-menu{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;width:100%}
 .boss-menu button{
   display:flex;align-items:center;justify-content:center;gap:8px;height:48px;padding:0 6px;
@@ -917,7 +931,9 @@ html.boss-open,html.boss-open body{overflow:hidden}
 @media(max-width:560px){
   .boss-bubble{left:50%;top:-8px;transform:translate(-50%,-100%);width:min(230px,80vw)}
   .boss-bubble::before{left:50%;top:auto;bottom:-10px;margin-left:-6px;border:6px solid transparent;border-top:10px solid #fff;border-bottom:0}
-  .boss-enemy{margin-top:70px;height:min(24svh,190px)}
+  .boss-enemy{margin-top:70px;height:min(22svh,180px)}
+  .boss-arena{height:190px}
+  .boss-php{width:54px}
   .boss-menu button{height:44px;font-size:11px;gap:4px}
   .boss-heart{width:12px;height:11px}
   .boss-stats{font-size:22px;gap:10px}
