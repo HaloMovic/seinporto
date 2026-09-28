@@ -71,7 +71,94 @@ app.post('/api/classify', async (req, res) => {
   }
 });
 
+/* ---------- guestbook ---------- */
+// Stored in Upstash Redis (Vercel Marketplace adds these env vars). Without them, running
+// locally keeps signatures in guestbook.local.json; on Vercel the guestbook reports it's offline.
+const REDIS_URL = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+const REDIS_TOKEN = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+const LOCAL_BOOK = path.join(__dirname, 'guestbook.local.json');
+const KEEP = 200; // oldest signatures fall off the end
+const SHOW = 60;
+const COOLDOWN = 60; // seconds between signatures from one visitor
+
+async function redis(...commands) {
+  const r = await fetch(`${REDIS_URL}/pipeline`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${REDIS_TOKEN}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify(commands),
+    signal: AbortSignal.timeout(5000),
+  });
+  if (!r.ok) throw new Error(`Redis ${r.status}`);
+  return (await r.json()).map(x => x.result);
+}
+
+const localCooldowns = new Map();
+const book = REDIS_URL && REDIS_TOKEN ? {
+  async list() {
+    const [items] = await redis(['LRANGE', 'guestbook', 0, SHOW - 1]);
+    return items.map(s => JSON.parse(s));
+  },
+  async cooling(ip) {
+    const [ok] = await redis(['SET', `guestbook:ip:${ip}`, 1, 'NX', 'EX', COOLDOWN]);
+    return ok !== 'OK';
+  },
+  async add(entry) {
+    await redis(['LPUSH', 'guestbook', JSON.stringify(entry)], ['LTRIM', 'guestbook', 0, KEEP - 1]);
+  },
+} : process.env.VERCEL ? null : {
+  async list() {
+    try { return JSON.parse(fs.readFileSync(LOCAL_BOOK, 'utf8')).slice(0, SHOW); } catch { return []; }
+  },
+  async cooling(ip) {
+    const last = localCooldowns.get(ip) || 0;
+    if (Date.now() - last < COOLDOWN * 1000) return true;
+    localCooldowns.set(ip, Date.now());
+    return false;
+  },
+  async add(entry) {
+    let all = [];
+    try { all = JSON.parse(fs.readFileSync(LOCAL_BOOK, 'utf8')); } catch {}
+    fs.writeFileSync(LOCAL_BOOK, JSON.stringify([entry, ...all].slice(0, KEEP), null, 2));
+  },
+};
+
+// one line of plain text: no control characters, no runs of spaces
+const clean = (v, max) => String(v ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+const HAS_LINK = /(https?:\/\/|www\.|\b[a-z0-9-]+\.(com|net|org|io|xyz|ru|id|co)\b)/i;
+
+app.get('/api/guestbook', async (req, res) => {
+  if (!book) return res.status(503).json({ error: 'the guestbook is closed for now' });
+  try {
+    res.json({ entries: await book.list() });
+  } catch (err) {
+    console.error('guestbook read failed:', err.message);
+    res.status(502).json({ error: "couldn't open the guestbook" });
+  }
+});
+
+app.post('/api/guestbook', async (req, res) => {
+  if (!book) return res.status(503).json({ error: 'the guestbook is closed for now' });
+  // bots fill every field, people never see this one
+  if (req.body?.website) return res.status(204).end();
+  const name = clean(req.body?.name, 24);
+  const message = clean(req.body?.message, 140);
+  if (!name || !message) return res.status(400).json({ error: 'write your name and a message' });
+  if (HAS_LINK.test(name) || HAS_LINK.test(message)) return res.status(400).json({ error: 'no links, sorry' });
+
+  const ip = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || '').split(',')[0].trim();
+  try {
+    if (await book.cooling(ip)) return res.status(429).json({ error: 'slow down, you just signed' });
+    const entry = { name, message, at: Date.now() };
+    await book.add(entry);
+    res.status(201).json({ entry });
+  } catch (err) {
+    console.error('guestbook write failed:', err.message);
+    res.status(502).json({ error: "couldn't sign the guestbook" });
+  }
+});
+
 app.listen(PORT, () => {
   console.log(`Running on http://localhost:${PORT}`);
   if (!process.env.GROQ_API_KEY) console.log('No GROQ_API_KEY in .env — the site will use keyword matching instead.');
+  if (!REDIS_URL) console.log('No Redis env vars: the guestbook is saved to guestbook.local.json.');
 });

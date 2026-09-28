@@ -60,6 +60,16 @@ const REPLIES = {
   },
 };
 
+// secret chat commands: typed exactly, they skip the AI. "then" is what happens after he talks.
+const SECRET_COMMANDS = [
+  { match: /^\/?help$/i, text: ["commands? who told you there were commands.", "try /fight. or don't."] },
+  { match: /^sudo\b/i, text: ["you're not root here.", "i am."] },
+  { match: /^\/?chaos( mode)?$/i, text: ["okay. you asked for it."], then: "chaos" },
+  { match: /^(\/fight|\/boss|fight me)$/i, text: ["oh you want to fight?", "fine."], then: "boss" },
+  { match: /konami|up up down down/i, text: ["↑ ↑ ↓ ↓ ← → ← → B A.", "you didn't hear it from me."] },
+  { match: /^\/?(still here|refuse)$/i, text: ["...", "yeah. i am."] },
+];
+
 const OPENING_LINE = "hey. type something.";
 const STAY_LINE = "thought so. stay a bit.";
 const GUNSHOT_AUDIO = "assets/gunshot.mp3";

@@ -343,6 +343,16 @@ chatForm.addEventListener('submit', async e => {
   setBusy(true);
   addMessage(text, 'user');
 
+  const secret = SECRET_COMMANDS.find(c => c.match.test(text));
+  if (secret) {
+    await sleep(400);
+    await sayAll(secret.text);
+    setBusy(false);
+    if (secret.then === 'chaos') setChaos(!document.documentElement.classList.contains('chaos'), true);
+    if (secret.then === 'boss') openBoss();
+    return;
+  }
+
   const typing = addMessage('typing...', 'bot typing');
   gsap.to(sit, { rotation: -1.5, duration: 0.4 });
   const category = await classify(text);
@@ -535,7 +545,10 @@ function closeConfirm(cb) {
 const chatWin = document.querySelector('.chat-win');
 const inChat = target => chatWin.contains(target);
 
+const bossIsOpen = () => document.documentElement.classList.contains('boss-open');
+
 function scrollAttempt() {
+  if (bossIsOpen()) return;
   if (state === 'hero') glitchToChat();
   else openConfirm();
 }
@@ -554,6 +567,7 @@ addEventListener('touchmove', e => {
 }, { passive: true });
 
 addEventListener('keydown', e => {
+  if (bossIsOpen()) return;
   if (state === 'confirm' && e.key === 'Escape') return btnNo.click();
   if (state === 'video' && e.key === 'Escape') return closeVideo();
   if (inChat(document.activeElement)) return;
@@ -1246,12 +1260,143 @@ document.getElementById('projects-hint').textContent = popOn === 'click' ? 'tap 
   });
 }
 
-/* ---------- contact form ---------- */
+/* ---------- contact form: hands the message to the visitor's email app ---------- */
+const EMAIL = 'seinhilamoviramadhan@gmail.com';
 document.getElementById('contact-form').addEventListener('submit', e => {
   e.preventDefault();
   const btn = e.target.querySelector('button');
+  const body = e.target.querySelector('textarea').value.trim();
+  location.href = `mailto:${EMAIL}?subject=${encodeURIComponent('hi sein')}&body=${encodeURIComponent(body)}`;
   const original = btn.textContent;
-  btn.textContent = 'Sent.';
-  e.target.reset();
-  setTimeout(() => (btn.textContent = original), 2000);
+  btn.textContent = 'opening mail...';
+  setTimeout(() => (btn.textContent = original), 2500);
 });
+
+/* ---------- guestbook ---------- */
+const gbForm = document.getElementById('gb-form');
+const gbList = document.getElementById('gb-list');
+const gbStatus = document.getElementById('gb-status');
+const gbLeft = document.getElementById('gb-left');
+const gbMessage = gbForm.elements.message;
+
+function gbSay(text, isError = false) {
+  gbStatus.textContent = text;
+  gbStatus.classList.toggle('err', isError);
+}
+
+function gbEntry({ name, message, at }) {
+  const li = document.createElement('li');
+  li.className = 'gb-entry';
+  const head = document.createElement('p');
+  head.className = 'gb-head';
+  const who = document.createElement('b');
+  who.textContent = name;
+  const when = document.createElement('time');
+  when.dateTime = new Date(at).toISOString();
+  when.textContent = new Date(at).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' });
+  head.append('★ ', who, when);
+  const msg = document.createElement('p');
+  msg.className = 'gb-msg';
+  msg.textContent = message;
+  li.append(head, msg);
+  return li;
+}
+
+function gbEmpty(text) {
+  const li = document.createElement('li');
+  li.className = 'gb-empty';
+  li.textContent = text;
+  gbList.replaceChildren(li);
+}
+
+(async () => {
+  try {
+    const res = await fetch('/api/guestbook');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    if (data.entries.length) gbList.replaceChildren(...data.entries.map(gbEntry));
+    else gbEmpty('no signatures yet. be the first.');
+  } catch (err) {
+    gbEmpty(err.message || "couldn't open the guestbook");
+  }
+})();
+
+gbMessage.addEventListener('input', () => { gbLeft.textContent = `${140 - gbMessage.value.length} left`; });
+
+gbForm.addEventListener('submit', async e => {
+  e.preventDefault();
+  const btn = gbForm.querySelector('button');
+  btn.disabled = true;
+  gbSay('signing...');
+  try {
+    const res = await fetch('/api/guestbook', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(Object.fromEntries(new FormData(gbForm))),
+    });
+    if (res.status === 204) return gbSay('thanks for signing ( ˘ ³˘)');
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    if (!gbList.querySelector('.gb-entry')) gbList.replaceChildren();
+    const li = gbEntry(data.entry);
+    gbList.prepend(li);
+    gsap.from(li, { opacity: 0, y: -10, duration: 0.4 });
+    gbForm.reset();
+    gbLeft.textContent = '140 left';
+    gbSay('thanks for signing ( ˘ ³˘)');
+  } catch (err) {
+    gbSay(err.message || "couldn't sign, try again", true);
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+/* ---------- chaos mode: the whole site glitches harder ---------- */
+const chaosToggles = document.querySelectorAll('.chaos-toggle');
+const CHAOS_TARGETS = 'h2, .win, .float-win, .tl-card, .project, .logo, .eyebrow, .bubble, #sit, .tk-card, .tk-me, .gb, .now-line, .now-slot, .journey-me, .still-fig, .hero-figure, .hero-title, .sticker, .site-footer, .repo-link';
+let chaosTimer = null;
+
+function setChaos(on, loud = false) {
+  document.documentElement.classList.toggle('chaos', on);
+  chaosToggles.forEach(b => b.setAttribute('aria-pressed', on));
+  try { localStorage.setItem('chaos', on ? '1' : ''); } catch {}
+  clearTimeout(chaosTimer);
+  if (on && loud) playAudio(GLITCH_AUDIO);
+  if (on && !reduceMotion) chaosTick();
+}
+
+function onScreen(el) {
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.bottom > 0 && r.top < innerHeight && r.right > 0 && r.left < innerWidth;
+}
+
+function chaosTick() {
+  if (!bossIsOpen() && !document.hidden) {
+    const visible = [...document.querySelectorAll(CHAOS_TARGETS)].filter(onScreen);
+    gsap.utils.shuffle(visible).slice(0, gsap.utils.random(1, 3, 1)).forEach(el => {
+      el.style.setProperty('--jx', `${gsap.utils.random(-18, 18, 1)}px`);
+      el.classList.remove('jolt');
+      void el.offsetWidth;
+      el.classList.add('jolt');
+      el.addEventListener('animationend', () => el.classList.remove('jolt'), { once: true });
+    });
+    // now and then the whole screen tears
+    if (Math.random() < 0.18) {
+      const tear = document.createElement('div');
+      tear.className = 'chaos-tear';
+      const bands = [];
+      for (let i = 0; i < 4; i++) {
+        const y = gsap.utils.random(0, 95), h = gsap.utils.random(1, 5);
+        const c = pick(['#ff2a55', '#00d5ff', '#ffffff', '#ffc93c']);
+        bands.push(`linear-gradient(${c},${c}) 0 ${y}%/100% ${h}% no-repeat`);
+      }
+      tear.style.background = bands.join(',');
+      document.body.append(tear);
+      setTimeout(() => tear.remove(), gsap.utils.random(60, 140));
+    }
+  }
+  chaosTimer = setTimeout(chaosTick, gsap.utils.random(220, 900));
+}
+
+chaosToggles.forEach(b => b.addEventListener('click', () => setChaos(!document.documentElement.classList.contains('chaos'), true)));
+try { if (localStorage.getItem('chaos')) setChaos(true); } catch {}

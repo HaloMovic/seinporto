@@ -90,7 +90,7 @@
     <header class="nav">
       <span class="logo">sein<span class="dim">.portfolio</span></span>
       <span class="status"><i class="pulse"></i>listening</span>
-      <span class="lock-pill">scroll locked</span>
+      <span class="nav-end"><button type="button" class="chaos-toggle" aria-pressed="false" title="make everything glitch harder"><span class="chaos-track" aria-hidden="true"><i></i></span>chaos</button><span class="lock-pill">scroll locked</span></span>
     </header>
 
     <div class="float-win" style="left:3%;top:14%;--r:-5deg">
@@ -202,9 +202,9 @@
     <header class="nav site-nav">
       <span class="logo">sein<span class="dim">.portfolio</span></span>
       <nav class="nav-links" aria-label="Sections">
-        <a href="#journey">journey</a><a href="#tools">toolkit</a><a href="#projects">projects</a><a href="#contact">contact</a><a href="#built">built with</a>
+        <a href="#journey">journey</a><a href="#tools">toolkit</a><a href="#projects">projects</a><a href="#now">now</a><a href="#contact">contact</a><a href="#guestbook">guestbook</a><a href="#built">built with</a>
       </nav>
-      <span class="lock-pill"><i class="pulse"></i>scroll unlocked</span>
+      <span class="nav-end"><button type="button" class="chaos-toggle" aria-pressed="false" title="make everything glitch harder"><span class="chaos-track" aria-hidden="true"><i></i></span>chaos</button><span class="lock-pill"><i class="pulse"></i>scroll unlocked</span></span>
     </header>
 
     <section id="journey" class="panel">
@@ -291,8 +291,24 @@
       <p class="projects-hint" id="projects-hint"></p>
     </section>
 
+    <section id="now" class="panel">
+      <p class="eyebrow">04 — now</p>
+      <h2>Now</h2>
+      <!-- keep this one line fresh: what you're making or learning right now, and the month -->
+      <div class="now-line">
+        <span class="now-dot" aria-hidden="true"></span>
+        <p>learning <b>GSAP</b>: timelines, ScrollTrigger, and making things move like they mean it.</p>
+        <time datetime="2026-09">updated sep 2026</time>
+      </div>
+      <ul class="now-slots" aria-label="Future projects">
+        <li class="now-slot"><span class="now-slot-num">slot 01</span><p>something i haven't made yet</p><small>loading... probably</small></li>
+        <li class="now-slot"><span class="now-slot-num">slot 02</span><p>reserved for the next project</p><small>coming soon ¯\_(ツ)_/¯</small></li>
+        <li class="now-slot"><span class="now-slot-num">slot 03</span><p>empty. for now.</p><small>( ˘･_･˘)</small></li>
+      </ul>
+    </section>
+
     <section id="contact" class="panel">
-      <p class="eyebrow">04 — contact</p>
+      <p class="eyebrow">05 — contact</p>
       <h2>Contact me</h2>
       <div class="win contact-win">
         <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-title">new message — sein</span></div>
@@ -302,19 +318,39 @@
             <div>
               <p class="contact-name">Sein Ramadhan</p>
               <a class="contact-ig" href="https://instagram.com/sein.ramadhan" target="_blank" rel="noopener">@sein.ramadhan</a>
+              <a class="contact-ig contact-mail" href="mailto:seinhilamoviramadhan@gmail.com">seinhilamoviramadhan@gmail.com</a>
             </div>
           </div>
           <form id="contact-form">
-            <textarea placeholder="say something..." required aria-label="Message"></textarea>
-            <button type="submit" class="btn solid">send</button>
+            <textarea placeholder="say something... (opens your email app)" required aria-label="Message"></textarea>
+            <button type="submit" class="btn solid">send email</button>
           </form>
         </div>
       </div>
-      <a class="repo-link" href="https://github.com/HaloMovic/Portofolio-TNP" target="_blank" rel="noopener">see what i used for this — github ↗</a>
+      <a class="repo-link" href="https://github.com/HaloMovic/seinporto" target="_blank" rel="noopener">see what i used for this — github ↗</a>
+    </section>
+
+    <section id="guestbook" class="panel">
+      <p class="eyebrow">06 — guestbook</p>
+      <h2>Guestbook</h2>
+      <div class="gb">
+        <div class="retro-bar" aria-hidden="true"><i class="retro-close"></i><span>guestbook.exe</span></div>
+        <div class="gb-body">
+          <form class="gb-form" id="gb-form" autocomplete="off">
+            <p class="gb-intro">★ sign my guestbook ★<small>be nice. no links.</small></p>
+            <label class="gb-field">name<input name="name" maxlength="24" required></label>
+            <label class="gb-field">message<textarea name="message" maxlength="140" rows="3" required></textarea></label>
+            <label class="gb-trap" aria-hidden="true">website<input name="website" tabindex="-1" autocomplete="off"></label>
+            <div class="gb-actions"><span class="gb-left" id="gb-left">140 left</span><button type="submit" class="gb-btn">sign ✎</button></div>
+            <p class="gb-status" id="gb-status" role="status"></p>
+          </form>
+          <ol class="gb-list" id="gb-list" aria-label="Signatures"><li class="gb-empty">opening the guestbook...</li></ol>
+        </div>
+      </div>
     </section>
 
     <section id="built" class="panel">
-      <p class="eyebrow">05 — built with</p>
+      <p class="eyebrow">07 — built with</p>
       <h2>Built with</h2>
       <p class="built-lede">no frameworks, no build step. plain HTML, CSS and JavaScript, GSAP for the motion, and a small Node server that asks an AI which reply fits what you typed. and help from gpt for making me in those poses</p>
       <div class="built-grid">
@@ -425,10 +461,51 @@ res.json({ category: Object.hasOwn(CATEGORIES, category) ? category : 'unknown' 
       </div>
     </section>
 
-    <footer class="site-footer">designed by sein · built with HTML, CSS, JS, GSAP &amp; help from AI<br>made by sein, who is still here.</footer>
+    <footer class="site-footer">designed by sein · built with HTML, CSS, JS, GSAP &amp; help from AI<br>made by sein, who is <span id="boss-door">still here</span>.</footer>
   </div>
 
 </main>
+
+<!-- secret: an Undertale-style fight. ↑ ↑ ↓ ↓ ← → ← → B A, "/fight" in the chat, or tap "still here" in the footer 5 times -->
+<section class="boss" id="boss" hidden role="dialog" aria-modal="true" aria-label="Secret fight">
+  <button type="button" class="boss-x" id="boss-x" aria-label="Leave the fight">✕</button>
+  <div class="boss-flash" id="boss-flash" aria-hidden="true"></div>
+  <div class="boss-stage" id="boss-stage">
+    <div class="boss-enemy" id="boss-enemy">
+      <img class="boss-sprite" id="boss-sprite" alt="Sein, ready to fight">
+      <i class="boss-slash" id="boss-slash" aria-hidden="true"></i>
+      <p class="boss-dmg" id="boss-dmg" aria-live="polite"></p>
+      <div class="boss-hp" id="boss-hp" hidden><i></i></div>
+      <div class="boss-bubble" id="boss-bubble" hidden><p></p></div>
+    </div>
+    <div class="boss-box" id="boss-box">
+      <p class="boss-text" id="boss-text" aria-live="polite"></p>
+      <ul class="boss-options" id="boss-options"></ul>
+      <div class="boss-target" id="boss-target"><i class="boss-bar" id="boss-bar"></i></div>
+      <canvas class="boss-board" id="boss-board"></canvas>
+    </div>
+    <div class="boss-stats">
+      <span>YOU</span><span>LV 1</span>
+      <span class="boss-hp-label">HP</span><span class="boss-php"><i id="boss-php-bar"></i></span><span id="boss-php-num">20 / 20</span>
+    </div>
+    <div class="boss-menu" id="boss-menu">
+      <button type="button" data-i="0"><span class="boss-heart"></span>FIGHT</button>
+      <button type="button" data-i="1"><span class="boss-heart"></span>ACT</button>
+      <button type="button" data-i="2"><span class="boss-heart"></span>ITEM</button>
+      <button type="button" data-i="3"><span class="boss-heart"></span>MERCY</button>
+    </div>
+    <p class="boss-help" id="boss-help"></p>
+  </div>
+  <div class="boss-end" id="boss-end" hidden>
+    <div class="boss-end-heart" id="boss-end-heart" aria-hidden="true"></div>
+    <p class="boss-end-title" id="boss-end-title"></p>
+    <p class="boss-end-text" id="boss-end-text"></p>
+    <div class="boss-end-actions">
+      <button type="button" id="boss-again">fight again</button>
+      <button type="button" id="boss-leave">back to the site</button>
+    </div>
+  </div>
+</section>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/gsap.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.5/ScrollTrigger.min.js"></script>
@@ -436,5 +513,6 @@ res.json({ category: Object.hasOwn(CATEGORIES, category) ? category : 'unknown' 
 
 <script src="replies.js"></script>
 <script src="script.js"></script>
+<script src="bossfight.js"></script>
 </body>
 </html>
