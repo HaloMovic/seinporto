@@ -1,7 +1,9 @@
 /* ---------- secret: fight him, Undertale: Last Breath style ---------- */
 // Three phases. He dodges everything until he's tired; the hit that finally lands doesn't end it,
-// he refuses and comes back harder. Phase 3 gives you no turns: attack after attack, with a
-// breather every three, then one last attack, and only then can you finish him or spare him.
+// he refuses and comes back harder. Using an item makes him attack too, but that turn doesn't
+// tire him out. Phase 3 gives you no turns: one long attack that flows from pattern to pattern
+// while the box reshapes and he talks over it, a heal every three, then his last attack, and
+// only then can you finish him or spare him.
 // Phase 3 opens by smashing your buttons; they only come back once he's out of breath.
 // With chaos mode on the fight is harder: the track runs faster (and every attack with it),
 // the attacks throw more at once, and phase 3 has one more attack and a longer ending.
@@ -28,16 +30,16 @@ const BOSS = {
   placeholder: 'assets/stand.png',
 };
 
-const MAX_HP = 60;
+const MAX_HP = 90;
 const SPEED = 110;                       // the heart, px/s
 const SOUL_GRAVITY = 900, JUMP = 250, MAX_FALL = 420;
 const HIT_R = 4.5;                       // the heart's hitbox radius
 const TIRED_AFTER = { 1: 8, 2: 9 };       // his turns before a hit can land
-const BREATHER_EVERY = 3;                // phase 3: attacks between heals
+const BREATHER_EVERY = 3;                // phase 3: attacks between heals (the same heal in chaos mode)
 const BREATHER_HEAL = Math.round(MAX_HP * 0.45);
 const FALLBACK_BPM = 120;                // the beat attacks keep when a track is missing or still loading
 const HARD_RATE = 1.15;                  // chaos mode: how much faster the track (and so everything) runs
-const HARD_BREATHER_HEAL = Math.round(MAX_HP * 0.3);
+const FLIP_ANGLES = [45, 95, 135, 167, 180, 213, 250, 290, 315]; // where the screen turns to
 
 const LINES = {
   intro: ["it's a beautiful day on my portfolio.", 'the scroll is locked. the guestbook is open.', 'on days like these, visitors like you...', '...should be signing my guestbook.', 'but you wanted a fight. so.'],
@@ -46,12 +48,14 @@ const LINES = {
     // one before each turn, in the order of STAGE_ATTACKS
     turns: ['ready?', "i'm not gonna make this easy.", 'dodge this.', 'you really came back for this?', 'watch the floor. and the ceiling.', 'okay. two at once.', 'my pencil never runs out.', "heh. you're not bad."],
     tired: 'okay... one more.',
+    item: ['snack break? sure. dodge while you chew.', "that won't save you.", 'eat fast.'],
     fall: ['...heh.', "guess that's it, huh?"],
   },
   2: {
     start: ['...nah.', "i'm not done.", 'not while this site is still up.'],
     turns: ['you think one hit was enough?', "i've been up since 7am. i can do this all day.", "let's flip things around.", 'hear that? that\'s my song.', 'still here.', 'blink and you miss it.', 'left. right. both.', "don't get dizzy.", 'one more. then another.'],
     tired: "heh... can't... keep this up...",
+    item: ["healing won't change anything.", 'go ahead. i can wait. kidding.', 'save some for me.'],
     fall: ['...w-wait.', "that's not..."],
   },
   3: {
@@ -543,18 +547,21 @@ async function type(text, wait = true) {
   await waitOk();
 }
 
-// his speech bubble: moves on after a moment, or on Z
+// his speech bubble: moves on after a moment, or on Z. A newer line takes the bubble over,
+// so he can talk over an attack without waiting for it
+let sayToken = 0;
 async function speech(text) {
-  const run = session;
+  const run = session, say = ++sayToken;
   speechEl.hidden = false;
   const p = speechEl.firstElementChild;
   for (let i = 1; i <= text.length; i++) {
-    if (run !== session) return;
+    if (run !== session || say !== sayToken) return;
     p.textContent = text.slice(0, i);
     if (i % 2) sfx.voice();
     await sleep(35);
   }
   await Promise.race([sleep(1500), waitOk()]);
+  if (say !== sayToken) return;
   waiter = null;
   speechEl.hidden = true;
 }
@@ -642,7 +649,7 @@ menuBtns.forEach((b, i) => b.addEventListener('click', () => {
   choose(i);
 }));
 
-async function runTurn(lines) {
+async function runTurn(lines, free = false) {
   const run = session;
   onKey = null;
   fight.phase = 'text';
@@ -650,7 +657,7 @@ async function runTurn(lines) {
     await type(line);
     if (run !== session) return;
   }
-  enemyTurn();
+  enemyTurn(free);
 }
 
 function useItem(j) {
@@ -660,7 +667,7 @@ function useItem(j) {
   fight.kr = 0;
   updateStats();
   sfx.heal();
-  runTurn([`${it.text}\n* ${fight.php === MAX_HP ? 'Your HP was maxed out.' : `You recovered ${fight.php - before} HP!`}`]);
+  runTurn([`${it.text}\n* ${fight.php === MAX_HP ? 'Your HP was maxed out.' : `You recovered ${fight.php - before} HP!`}`], true);
 }
 
 /* ---------- FIGHT: stop the bar in the middle ---------- */
@@ -699,9 +706,10 @@ async function attack() {
   enemyTurn();
 }
 
-async function popNumber(text, miss) {
+async function popNumber(text, miss, heal = false) {
   dmgEl.textContent = text;
   dmgEl.classList.toggle('miss', miss);
+  dmgEl.classList.toggle('heal', heal);
   await gsap.fromTo(dmgEl, { opacity: 1, y: 0 }, { y: -18, duration: 0.25, ease: 'power2.out', yoyo: true, repeat: 1 });
   await sleep(600);
   gsap.to(dmgEl, { opacity: 0, duration: 0.2 });
@@ -885,11 +893,14 @@ function shake(px = 6) {
 }
 
 /* ---------- his turn ---------- */
-async function enemyTurn() {
+// free: he's answering an item. He still attacks, one of this phase's at random,
+// but it doesn't count towards wearing him out
+async function enemyTurn(free = false) {
   const run = session;
   if (!fight.open) return;
+  free = free && !!LINES[fight.stage].item;
   fight.turn++;
-  fight.turnsInStage++;
+  if (!free) fight.turnsInStage++;
   fight.phase = 'enemy';
   onKey = null;
   ++typeToken;
@@ -901,18 +912,20 @@ async function enemyTurn() {
     return;
   }
   const lines = LINES[fight.stage];
-  await speech(fight.tired ? lines.tired : lines.turns[(fight.turnsInStage - 1) % lines.turns.length]);
+  await speech(free ? pick(lines.item) : fight.tired ? lines.tired : lines.turns[(fight.turnsInStage - 1) % lines.turns.length]);
   if (run !== session) return;
 
   const list = STAGE_ATTACKS[fight.stage];
-  const survived = await runAttack(list[(fight.turnsInStage - 1) % list.length]);
+  const survived = await runAttack(free ? pick(list.filter(a => typeof a === 'string')) : list[(fight.turnsInStage - 1) % list.length]);
   if (run !== session) return;
   if (!survived) return gameOver();
   if (fight.turnsInStage >= TIRED_AFTER[fight.stage]) fight.tired = true;
   showMenu();
 }
 
-// phase 3: no menu between attacks. every few attacks you get a breather, then his last attack
+// phase 3: no menu between attacks. It's all one attack: each pattern flows straight into the
+// next while the box reshapes around you, he talks over it, and every few you're healed.
+// Then his last attack, still without letting up
 async function gauntlet() {
   const run = session;
   onKey = null;
@@ -922,25 +935,24 @@ async function gauntlet() {
     list.splice(5, 0, 'frenzy');
     turns.splice(5, 0, lines.frenzy);
   }
-  for (let i = 0; i < list.length; i++) {
-    fight.turn++;
-    fight.turnsInStage++;
-    fight.phase = 'enemy';
-    ++typeToken;
-    boxText.textContent = '';
-    await speech(turns[i % turns.length]);
-    if (run !== session) return;
-    const survived = await runAttack(list[i]);
-    if (run !== session) return;
-    if (!survived) return gameOver();
-    if ((i + 1) % BREATHER_EVERY === 0) {
-      await breather();
-      if (run !== session) return;
-    }
-  }
   fight.phase = 'enemy';
-  if (!await speeches(lines.final)) return;
-  const survived = await runAttack('final');
+  ++typeToken;
+  boxText.textContent = '';
+  const survived = await runAttack(null, async s => {
+    G.flow = true;
+    for (let i = 0; i < list.length; i++) {
+      fight.turn++;
+      fight.turnsInStage++;
+      speech(turns[i % turns.length]);
+      await ATTACKS[list[i]](s);
+      if (!G.running) return;
+      if ((i + 1) % BREATHER_EVERY === 0) breather();
+    }
+    // the last attack cuts to black between its parts, so it keeps its full pauses
+    G.flow = false;
+    speeches(lines.final);
+    await ATTACKS.final(s);
+  });
   if (run !== session) return;
   if (!survived) return gameOver();
   fight.exhausted = true;
@@ -951,14 +963,14 @@ async function gauntlet() {
   showMenu();
 }
 
-async function breather() {
+// a heal in the middle of the attack; nothing stops for it
+function breather() {
   const before = fight.php;
-  fight.php = Math.min(MAX_HP, fight.php + (fight.hard ? HARD_BREATHER_HEAL : BREATHER_HEAL));
+  fight.php = Math.min(MAX_HP, fight.php + BREATHER_HEAL);
   fight.kr = 0;
   updateStats();
   sfx.heal();
-  type(`* The glitching stops for a moment.\n* ${fight.php === MAX_HP ? 'Your HP was maxed out.' : `You recovered ${fight.php - before} HP!`}`, false);
-  await sleep(1800);
+  popNumber(before === MAX_HP ? 'HP MAX' : `+${fight.php - before} HP`, false, true);
 }
 
 /* ---------- the bullet board: everything he throws at you ---------- */
@@ -996,9 +1008,9 @@ function sizeFx() {
 }
 addEventListener('resize', () => { if (fight.open) sizeFx(); });
 
-function setBox(w, h, dur = 0.3) {
+function setBox(w, h, dur = 0.3, ease = 'steps(5)') {
   const maxW = stage.clientWidth - 8;
-  return gsap.to(box, { width: Math.min(w, maxW) + 8, height: h + 8, duration: dur, ease: 'steps(5)' });
+  return gsap.to(box, { width: Math.min(w, maxW) + 8, height: h + 8, duration: dur, ease });
 }
 function restoreBox() {
   return gsap.to(box, { width: stage.clientWidth, height: 150, duration: 0.3, ease: 'steps(5)', onComplete: () => gsap.set(box, { clearProps: 'width,height' }) });
@@ -1373,9 +1385,13 @@ const api = {
     return api.until(G.cursor);
   },
   at: n => G.cursor + n * G.spb,
-  // in the dark the box just snaps to its new size, and the heart to its middle
+  // the wait at the end of an attack, for its last bullets to clear; when attacks flow
+  // into each other (phase 3) the next one starts over them instead
+  tail: n => api.beat(G.flow ? Math.min(n, 1) : n),
+  // in the dark the box just snaps to its new size, and the heart to its middle;
+  // when attacks flow into each other it glides to it
   box(w, h) {
-    if (!G.cutting) return setBox(w, h);
+    if (!G.cutting) return G.flow ? setBox(w, h, 0.5, 'power2.inOut') : setBox(w, h);
     gsap.killTweensOf(box, 'width,height');
     gsap.set(box, { width: Math.min(w, stage.clientWidth - 8) + 8, height: h + 8 });
     G.box.w = box.clientWidth;
@@ -1392,6 +1408,7 @@ const api = {
     G.bullets = [];
     if (G.flipped) {
       G.flipped = false;
+      G.angle = 0;
       gsap.killTweensOf(world, 'rotation');
       gsap.set(world, { rotation: 0 });
     }
@@ -1481,10 +1498,17 @@ const api = {
     for (let i = 0; i < n; i++) tile(TOOL_TAGS[i % TOOL_TAGS.length], G.t + beats * G.spb);
     await api.wait(beats * G.spb);
   },
+  // the screen turns round the box to some new angle (or back upright). Only the view turns:
+  // the keys still move the heart the way they did
   flip(on) {
+    if (on && !G.flipped) {
+      const o = worldOffset(box);
+      gsap.set(world, { transformOrigin: `${o.x + box.offsetWidth / 2}px ${o.y + box.offsetHeight / 2}px` });
+    }
     G.flipped = on;
+    G.angle = on ? pick(FLIP_ANGLES.filter(a => a !== G.angle)) : 0;
     sfx.glitch();
-    return gsap.to(world, { rotation: on ? 180 : 0, duration: 0.45, ease: 'power2.inOut' });
+    return gsap.to(world, { rotation: G.angle, duration: 0.45, ease: 'power2.inOut' });
   },
   shake,
   glitch,
@@ -1602,6 +1626,7 @@ const ATTACKS = {
     await s.beat(3);
     s.aimedBlaster(1, s.at(2));
     s.aimedBlaster(1, s.at(2));
+    s.flip(true);
     await s.beat(4);
     s.flip(false);
     await rain;
@@ -1697,7 +1722,7 @@ const ATTACKS = {
       s.blasterRow(i % 2 ? 'left' : 'top', 5, Math.floor(rand(0, 5)), s.at(2));
       await s.beat(s.hard ? 1.5 : 2);
     }
-    await s.beat(3);
+    await s.tail(3);
   },
   // a blaster on every beat, aimed where you are, and a cross on every bar
   async chase(s) {
@@ -1711,7 +1736,7 @@ const ATTACKS = {
       if (i % 4 === 3) s.cross(s.at(2), 0.6);
       await s.beat(1);
     }
-    await s.beat(3);
+    await s.tail(3);
   },
   async tunnel(s) {
     await s.box(260, 140);
@@ -1722,9 +1747,9 @@ const ATTACKS = {
       s.floorBone({ from: 'right', edge: 'bottom', height: 14 + extra + Math.abs(Math.sin(i * 0.8)) * 28, beats: 2 });
       s.floorBone({ from: 'right', edge: 'top', height: 12 + extra + Math.abs(Math.cos(i * 0.8)) * 22, beats: 2 });
       await s.beat(1);
-      if (s.hard ? i % 4 === 3 : i === 7) s.flip(!G.flipped);
+      if (s.hard ? i % 4 === 3 : i % 5 === 4) s.flip(true);
     }
-    await s.beat(4);
+    await s.tail(4);
     s.flip(false);
     s.soul('red');
   },
@@ -1742,7 +1767,7 @@ const ATTACKS = {
       s.blasterRow('left', 5, row, s.at(gap));
       await s.beat(gap);
     }
-    await s.beat(3);
+    await s.tail(3);
   },
   async storm(s) {
     await s.box(170, 150);
@@ -1766,7 +1791,7 @@ const ATTACKS = {
       if (s.hard && i % 4 === 3) s.ringBlaster(i * 47 + 90, s.at(1.5));
       await s.beat(0.5);
     }
-    await s.beat(3);
+    await s.tail(3);
   },
   // three long bones turning round the middle, reversing every four beats,
   // while bones are thrown at wherever you're standing
@@ -1782,7 +1807,7 @@ const ATTACKS = {
       if (i % 4 === 3) s.aimedBlaster(0.5, s.at(2));
       await s.beat(1);
     }
-    await s.beat(2);
+    await s.tail(2);
   },
   // rings of bones close in on you, each with one way out; they come faster, and the floor lights up
   async noose(s) {
@@ -1797,7 +1822,7 @@ const ATTACKS = {
       await s.beat(beats);
     }
     await bands;
-    await s.beat(2);
+    await s.tail(2);
   },
   // gravity yanks a new way every bar, the wall it throws you at grows spikes,
   // and something is thrown at where you landed
@@ -1815,7 +1840,7 @@ const ATTACKS = {
       await s.beat(2);
     }
     s.soul('red');
-    await s.beat(2);
+    await s.tail(2);
   },
   // the box closes in a bar at a time while walls, blue and orange bones and blasters keep coming
   async squeeze(s) {
@@ -1833,7 +1858,7 @@ const ATTACKS = {
       if (s.hard ? i % 2 === 0 : i % 4 === 2) s.aimedBlaster(0.5, s.at(2));
       await s.beat(1);
     }
-    await s.beat(4);
+    await s.tail(4);
   },
   // chaos mode only: a cross that snaps round, code flying through it, and blasters on top
   async frenzy(s) {
@@ -1893,10 +1918,9 @@ const STAGE_ATTACKS = {
 /* ---------- the engine: runs while he attacks ---------- */
 function moveHeart(dt) {
   const hr = G.heart, { w, h } = G.box;
-  let ix = (held.has('right') ? 1 : 0) - (held.has('left') ? 1 : 0);
-  let iy = (held.has('down') ? 1 : 0) - (held.has('up') ? 1 : 0);
-  // when the screen is upside down, keep the keys matching what you see
-  if (G.flipped) { ix = -ix; iy = -iy; }
+  // the keys don't turn with the screen: when it's flipped, only the view is
+  const ix = (held.has('right') ? 1 : 0) - (held.has('left') ? 1 : 0);
+  const iy = (held.has('down') ? 1 : 0) - (held.has('up') ? 1 : 0);
 
   if (G.soul === 'red') {
     hr.x += ix * SPEED * dt;
@@ -1995,7 +2019,8 @@ function uncut() {
   gsap.set(cutEl, { opacity: 0 });
 }
 
-async function runAttack(name) {
+// name: an attack, or a list of them with a cut to black between; script: run this instead
+async function runAttack(name, script) {
   const run = session;
   fight.phase = 'dodge';
   setMode('dodge');
@@ -2003,7 +2028,7 @@ async function runAttack(name) {
   const o = worldOffset(box);
   Object.assign(G, {
     running: true, last: performance.now(), bullets: [], waits: [],
-    soul: 'red', grav: 'down', flipped: false, cutting: false, hurtCd: 0, lastOuch: -Infinity, touchJump: false,
+    soul: 'red', grav: 'down', flipped: false, angle: 0, flow: false, cutting: false, hurtCd: 0, lastOuch: -Infinity, touchJump: false,
     box: { x: o.x + 4, y: o.y + 4, w: box.clientWidth, h: box.clientHeight },
   });
   startClock();
@@ -2017,7 +2042,7 @@ async function runAttack(name) {
 
   // a turn can be several attacks back to back, with a cut to black between them
   const parts = [].concat(name);
-  const play = async () => {
+  const play = script ? () => script(api) : async () => {
     for (let i = 0; i < parts.length && G.running; i++) {
       if (i) api.cut();
       await ATTACKS[parts[i]](api);
@@ -2052,8 +2077,7 @@ bossEl.addEventListener('pointerdown', e => {
 });
 bossEl.addEventListener('pointermove', e => {
   if (!drag || !G.running) return;
-  let dx = (e.clientX - drag.x) * 1.1, dy = (e.clientY - drag.y) * 1.1;
-  if (G.flipped) { dx = -dx; dy = -dy; }
+  const dx = (e.clientX - drag.x) * 1.1, dy = (e.clientY - drag.y) * 1.1;
   const [gx] = DIRS[G.grav];
   if (G.soul === 'red' || !gx) G.heart.x = clamp(9, G.box.w - 9, G.heart.x + dx);
   if (G.soul === 'red' || gx) G.heart.y = clamp(8, G.box.h - 8, G.heart.y + dy);
@@ -2110,6 +2134,8 @@ async function showEnd({ title, text, broken = false, again }) {
   fight.phase = 'end';
   fight.retry = broken;
   onKey = null;
+  ++sayToken;
+  speechEl.hidden = true;
   endEl.hidden = false;
   endTitle.textContent = title;
   endText.textContent = '';

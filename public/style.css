@@ -884,6 +884,7 @@ html.boss-open,html.boss-open body{overflow:hidden}
 }
 .boss-dmg{position:absolute;left:50%;top:-44px;transform:translateX(-50%);font-size:40px;line-height:1;color:#ff3030;white-space:nowrap;opacity:0}
 .boss-dmg.miss{color:#c0c0c0}
+.boss-dmg.heal{color:#3cff3c}
 .boss-hp{position:absolute;left:50%;top:-20px;width:130px;height:14px;margin-left:-65px;background:#ff2020}
 .boss-hp[hidden]{display:none}
 .boss-hp i{display:block;height:100%;background:#20e020}
