@@ -9,6 +9,8 @@
 // the attacks throw more at once, and phase 3 has one more attack and a longer ending.
 // Opens with the Konami code (↑ ↑ ↓ ↓ ← → ← → B A), "/fight" in the chat,
 // or by tapping "still here" in the footer five times.
+// Admin: "/fight 2" or "/fight 3" in the chat opens straight at that phase, and in the fight
+// ` (backtick) then 1, 2 or 3 jumps to it. Phase 3 always starts from its opening, buttons whole.
 //
 // Art: drop sprites into assets/boss/ with these names and they're picked up on their own.
 // A missing sprite falls back to his photo, pixelated; missing music just means silence.
@@ -34,7 +36,7 @@ const MAX_HP = 90;
 const SPEED = 110;                       // the heart, px/s
 const SOUL_GRAVITY = 900, JUMP = 250, MAX_FALL = 420;
 const HIT_R = 4.5;                       // the heart's hitbox radius
-const TIRED_AFTER = { 1: 8, 2: 9 };       // his turns before a hit can land
+const TIRED_AFTER = { 1: 8, 2: 10 };      // his turns before a hit can land
 const BREATHER_EVERY = 3;                // phase 3: attacks between heals (the same heal in chaos mode)
 const BREATHER_HEAL = Math.round(MAX_HP * 0.45);
 const FALLBACK_BPM = 120;                // the beat attacks keep when a track is missing or still loading
@@ -53,7 +55,7 @@ const LINES = {
   },
   2: {
     start: ['...nah.', "i'm not done.", 'not while this site is still up.'],
-    turns: ['you think one hit was enough?', "i've been up since 7am. i can do this all day.", "let's flip things around.", 'hear that? that\'s my song.', 'still here.', 'blink and you miss it.', 'left. right. both.', "don't get dizzy.", 'one more. then another.'],
+    turns: ['you think one hit was enough?', "i've been up since 7am. i can do this all day.", "let's flip things around.", 'two of you? then two of everything.', "hear that? that's my song.", 'still here.', 'try outrunning a laser.', 'blink and you miss it.', 'they know where you are.', 'left. right. both.'],
     tired: "heh... can't... keep this up...",
     item: ["healing won't change anything.", 'go ahead. i can wait. kidding.', 'save some for me.'],
     fall: ['...w-wait.', "that's not..."],
@@ -61,7 +63,7 @@ const LINES = {
   3: {
     start: ['...', 'something is holding me up.', "and it doesn't want you to win."],
     // one before each attack, in the order of STAGE_ATTACKS[3]
-    turns: ['this is my last breath.', 'the screen is mine now.', 'round and round.', 'keep up with the beat.', "there's only one way out.", "i'm not letting you through.", 'which way is down?', 'just... give up.', 'no more room.'],
+    turns: ['this is my last breath.', 'the screen is mine now.', "the floor won't hold still.", 'round and round.', 'keep up with the beat.', "look. there's two of you now.", "there's only one way out.", "i'm not letting you through.", "i-it's not... me...", 'which way is down?', 'just... give up.', 'no more room.'],
     smash: ["and you won't be needing these."],
     frenzy: 'you wanted chaos? here.', // chaos mode's extra attack
     final: ['alright.', 'this is it. my special attack.', 'survive this and the site is yours.'],
@@ -784,8 +786,18 @@ async function phaseBreak(next) {
   glitch(next === 3 ? 3 : 1);
   gsap.fromTo(spriteEl, { scale: 1.15, filter: 'brightness(4)' }, { scale: 1, filter: 'brightness(1)', duration: 1.1, ease: 'power2.out', clearProps: 'filter' });
   shake(10);
+  rise(next);
+}
+
+// he's back on his feet: his lines, in phase 3 your buttons smashed, then the fight goes on.
+// A retry (or a jump) to phase 3 starts here too, with the buttons still whole
+async function rise(next) {
+  const run = session;
+  onKey = null;
+  fight.phase = 'text';
   startMusic(next);
   await sleep(900);
+  if (run !== session) return;
   if (!await speeches(LINES[next].start)) return;
   if (next === 3) {
     if (!await speeches(LINES[3].smash)) return;
@@ -932,8 +944,9 @@ async function gauntlet() {
   const lines = LINES[3], list = [...STAGE_ATTACKS[3]], turns = [...lines.turns];
   // chaos mode: one more, after 'noose'
   if (fight.hard) {
-    list.splice(5, 0, 'frenzy');
-    turns.splice(5, 0, lines.frenzy);
+    const at = list.indexOf('noose') + 1;
+    list.splice(at, 0, 'frenzy');
+    turns.splice(at, 0, lines.frenzy);
   }
   fight.phase = 'enemy';
   ++typeToken;
@@ -944,6 +957,7 @@ async function gauntlet() {
       fight.turn++;
       fight.turnsInStage++;
       speech(turns[i % turns.length]);
+      s.tear(0.25);
       await ATTACKS[list[i]](s);
       if (!G.running) return;
       if ((i + 1) % BREATHER_EVERY === 0) breather();
@@ -1013,15 +1027,17 @@ function setBox(w, h, dur = 0.3, ease = 'steps(5)') {
   return gsap.to(box, { width: Math.min(w, maxW) + 8, height: h + 8, duration: dur, ease });
 }
 function restoreBox() {
-  return gsap.to(box, { width: stage.clientWidth, height: 150, duration: 0.3, ease: 'steps(5)', onComplete: () => gsap.set(box, { clearProps: 'width,height' }) });
+  return gsap.to(box, { width: stage.clientWidth, height: 150, x: 0, y: 0, duration: 0.3, ease: 'steps(5)', onComplete: () => gsap.set(box, { clearProps: 'width,height,transform' }) });
 }
+// how far the box can wander sideways from its spot and still be on the stage
+const boxRoom = () => Math.min(110, Math.max(0, (stage.clientWidth - box.offsetWidth) / 2));
 
 const rectHit = (cx, cy, w, h) => {
   const dx = Math.max(Math.abs(G.heart.x - cx) - w / 2, 0);
   const dy = Math.max(Math.abs(G.heart.y - cy) - h / 2, 0);
   return dx * dx + dy * dy < HIT_R * HIT_R;
 };
-const COLORS = { white: '#fff', blue: '#14b4ff', orange: '#ff9a1f', yellow: '#ffff00' };
+const COLORS = { white: '#fff', blue: '#14b4ff', orange: '#ff9a1f', yellow: '#ffff00', ghost: '#ff2a55' };
 
 function drawBone(c, b) {
   c.fillStyle = COLORS[b.color];
@@ -1096,18 +1112,26 @@ function spikes({ side = 'down', height = 22, rise = gridAfter(G.t + 0.5), stay 
   });
 }
 
-// a blaster: slides in, charges, fires a beam across the screen at `fireAt` (on a beat), slides back out
-function blaster({ x, y, angle, fireAt = G.t + 0.83, size = 1 }) {
-  const rad = angle * Math.PI / 180, dx = Math.cos(rad), dy = Math.sin(rad);
+// a blaster: slides in, charges, fires a beam across the screen at `fireAt` (on a beat), slides back out.
+// turn: the beam swings round that many degrees while it fires, over `hold` seconds, and a faint fan
+// shows where it'll sweep while it charges. Blue and orange beams work like the bones
+function blaster({ x, y, angle, fireAt = G.t + 0.83, size = 1, turn = 0, hold = 0.5, color = 'white' }) {
+  let rad, dx, dy;
+  const aim = a => { rad = a * Math.PI / 180; dx = Math.cos(rad); dy = Math.sin(rad); };
+  aim(angle);
+  const swing = gsap.parseEase('sine.inOut');
   const born = G.t, fire = Math.max(0.3, fireAt - born);
-  const enter = Math.min(0.28, fire * 0.4), charge = fire - enter, end = fire + 0.5;
+  const enter = Math.min(0.28, fire * 0.4), charge = fire - enter, end = fire + hold;
   G.bullets.push({
     clip: false, kr: 2, age: 0, beam: 0, mouth: 0, back: 1, charged: false, fired: false,
     update() {
       const t = (this.age = G.t - born);
       this.back = t < enter ? 1 - gsap.parseEase('power2.out')(t / enter) : t > end ? (t - end) * 2.5 : 0;
       this.mouth = t < enter ? 0 : Math.min(1, (t - enter) / charge);
-      this.beam = t < fire ? 0 : t < fire + 0.07 ? (t - fire) / 0.07 : Math.max(0, 1 - (t - fire - 0.07) / (end - fire + 0.2));
+      // full strength for as long as it sweeps, then it fades
+      const k = t - fire - 0.07 - (hold - 0.5);
+      this.beam = t < fire ? 0 : t < fire + 0.07 ? (t - fire) / 0.07 : k <= 0 ? 1 : Math.max(0, 1 - k / 0.7);
+      if (turn) aim(angle + turn * swing(clamp(0, 1, (t - fire) / hold)));
       if (t >= enter && !this.charged) { this.charged = true; sfx.charge(charge); }
       if (t >= fire && !this.fired) { this.fired = true; sfx.blast(); shake(3 + size * 2); }
       if (t > end + 0.45) this.dead = true;
@@ -1118,6 +1142,8 @@ function blaster({ x, y, angle, fireAt = G.t + 0.83, size = 1 }) {
     },
     hurts() {
       if (this.beam < 0.25) return false;
+      if (color === 'blue' && !G.moved) return false;
+      if (color === 'orange' && G.moved) return false;
       const [ox, oy] = this.mouthPos();
       const hx = G.heart.x - ox, hy = G.heart.y - oy;
       if (hx * dx + hy * dy < 0) return false;
@@ -1126,6 +1152,21 @@ function blaster({ x, y, angle, fireAt = G.t + 0.83, size = 1 }) {
     draw(c) {
       const off = -this.back * 90 * Math.max(1, size);
       const cx = x + dx * off, cy = y + dy * off;
+      if (turn && this.age < fire) {
+        const [ox, oy] = this.mouthPos();
+        c.save();
+        c.beginPath();
+        c.rect(0, 0, G.box.w, G.box.h);
+        c.clip();
+        c.globalAlpha = Math.floor(this.age * 10) % 2 ? 0.24 : 0.12;
+        c.fillStyle = COLORS[color];
+        c.beginPath();
+        c.moveTo(ox, oy);
+        c.arc(ox, oy, 2400, rad, (angle + turn) * Math.PI / 180, turn < 0);
+        c.closePath();
+        c.fill();
+        c.restore();
+      }
       c.save();
       c.globalAlpha = this.age > end ? Math.max(0, 1 - (this.age - end) * 2.2) : 1;
       if (this.beam > 0) {
@@ -1134,7 +1175,7 @@ function blaster({ x, y, angle, fireAt = G.t + 0.83, size = 1 }) {
         c.save();
         c.translate(ox, oy);
         c.rotate(rad);
-        c.fillStyle = '#fff';
+        c.fillStyle = COLORS[color];
         c.fillRect(0, -bw / 2, 2400, bw);
         c.restore();
       }
@@ -1187,10 +1228,10 @@ function rotBone({ x, y, len, thick = 8, vx = 0, vy = 0, angle = Math.atan2(vy, 
   });
 }
 
-// n bones on a ring around the box, all thrown at where the heart is now, landing `beats` later
-function boneRing(n, beats, turn = 0) {
+// n bones on a ring around the box, all thrown at where the heart (or `at`) is now, landing `beats` later
+function boneRing(n, beats, turn = 0, at = G.heart) {
   const { w, h } = G.box, r = Math.max(w, h) / 2 + 24, T = beats * G.spb;
-  const tx = G.heart.x, ty = G.heart.y;
+  const tx = at.x, ty = at.y;
   for (let k = 0; k < n; k++) {
     const a = turn + k * Math.PI * 2 / n, x = w / 2 + Math.cos(a) * r, y = h / 2 + Math.sin(a) * r;
     rotBone({ x, y, len: 18, thick: 7, vx: (tx - x) / T, vy: (ty - y) / T });
@@ -1264,6 +1305,53 @@ function closingRing({ n = 16, gap = 3, r0 = 80, beats = 3, spin = 1 }) {
     },
     hurts() { return this.each((x, y, a, len) => rotHit(x, y, len, 7, a)); },
     draw(c) { this.each((x, y, a, len) => { drawTurned(c, x, y, a, { x: 0, y: 0, w: len, h: 7, color: 'white' }); }); },
+  });
+}
+
+// a glitching bone: it doesn't slide, it skips a step every `every` seconds,
+// and a red ghost shows where it lands next
+function stutter({ x, y, w, h, dx = 0, dy = 0, every }) {
+  const born = G.t;
+  G.bullets.push({
+    x, y, w, h, color: 'white', k: 0,
+    update() {
+      const k = Math.floor((G.t - born) / every);
+      if (k !== this.k) {
+        this.k = k;
+        this.x = x + dx * k;
+        this.y = y + dy * k;
+        sfx.bone();
+      }
+      if (this.x < -90 || this.x > G.box.w + 90 || this.y < -90 || this.y > G.box.h + 90) this.dead = true;
+    },
+    hurts() { return rectHit(this.x, this.y, this.w, this.h); },
+    draw(c) {
+      c.save();
+      c.globalAlpha = 0.4;
+      drawBone(c, { x: this.x + dx, y: this.y + dy, w, h, color: 'ghost' });
+      c.restore();
+      drawBone(c, this);
+    },
+  });
+}
+
+// a bone that steers after the heart for a moment (yellow while it does), then flies straight on
+function homing({ x, y, speed = 85, seek = 1.3, len = 16 }) {
+  const born = G.t;
+  let a = Math.atan2(G.heart.y - y, G.heart.x - x);
+  G.bullets.push({
+    x, y,
+    update(dt) {
+      if (G.t - born < seek) {
+        const d = Math.atan2(G.heart.y - this.y, G.heart.x - this.x) - a;
+        a += clamp(-2.2 * dt, 2.2 * dt, Math.atan2(Math.sin(d), Math.cos(d)));
+      }
+      this.x += Math.cos(a) * speed * dt;
+      this.y += Math.sin(a) * speed * dt;
+      if (G.t - born > 8 || this.x < -140 || this.x > G.box.w + 140 || this.y < -140 || this.y > G.box.h + 140) this.dead = true;
+    },
+    hurts() { return rotHit(this.x, this.y, len, 7, a); },
+    draw(c) { drawTurned(c, this.x, this.y, a, { x: 0, y: 0, w: len, h: 7, color: G.t - born < seek ? 'yellow' : 'white' }); },
   });
 }
 
@@ -1406,6 +1494,10 @@ const api = {
     gsap.set(cutEl, { opacity: 1 });
     sfx.cut();
     G.bullets = [];
+    G.mirror = null;
+    gsap.killTweensOf(box, 'x,y');
+    gsap.set(box, { x: 0, y: 0 });
+    G.bx = G.by = 0;
     if (G.flipped) {
       G.flipped = false;
       G.angle = 0;
@@ -1448,12 +1540,64 @@ const api = {
   boneRing,
   spinner,
   closingRing,
-  // from a point on a ring around the box, aimed at the heart
-  aimedBlaster(size = 1, fireAt) {
+  // from a point on a ring around the box, aimed at the heart (or `at`, like the other soul)
+  aimedBlaster(size = 1, fireAt, at = G.heart) {
     const { w, h } = G.box;
     const a = rand(0, Math.PI * 2), r = Math.max(w, h) / 2 + 60;
     const x = w / 2 + Math.cos(a) * r, y = h / 2 + Math.sin(a) * r;
-    blaster({ x, y, angle: Math.atan2(G.heart.y - y, G.heart.x - x) * 180 / Math.PI, size, fireAt });
+    blaster({ x, y, angle: Math.atan2(at.y - y, at.x - x) * 180 / Math.PI, size, fireAt });
+  },
+  // a blaster over a top corner whose beam swings down across the box from `from` to `to`
+  // degrees (0 runs along the top, 90 straight down its own wall) over `beats`
+  wiper(side, fireAt, beats = 2, { from = 5, to = 45, color = 'white', size = 0.7 } = {}) {
+    const { w } = G.box, left = side === 'left';
+    blaster({
+      x: left ? -30 : w + 30, y: -30, angle: left ? from : 180 - from,
+      turn: left ? to - from : from - to, hold: beats * G.spb, fireAt, size, color,
+    });
+  },
+  // a homing bone from a random point on the edge of the box
+  homing(opts) {
+    const { w, h } = G.box, side = Math.floor(rand(0, 4));
+    const [x, y] = side === 0 ? [rand(0, w), -10] : side === 1 ? [w + 10, rand(0, h)] : side === 2 ? [rand(0, w), h + 10] : [-10, rand(0, h)];
+    homing({ x, y, ...opts });
+  },
+  // a wall of stuttering bones with one gap, from the left, the right or the top,
+  // crossing the box in `beats` a half beat's step at a time
+  stutterWall({ from = 'right', gap = 0.5, size = 44, beats = 3, thick = 10 }) {
+    const { w, h } = G.box, drops = from === 'top';
+    const span = drops ? w : h, steps = beats * 2;
+    const c = clamp(size / 2 + 4, span - size / 2 - 4, gap * span);
+    const lo = c - size / 2, hi = span - (c + size / 2);
+    const start = from === 'right' ? w + thick : -thick;
+    const step = ((drops ? h : w) + 2 * thick) / steps * (from === 'right' ? -1 : 1);
+    const piece = (at, len) => (drops
+      ? stutter({ x: at, y: start, w: len, h: thick, dy: step, every: G.spb / 2 })
+      : stutter({ x: start, y: at, w: thick, h: len, dx: step, every: G.spb / 2 }));
+    if (lo > 0) piece(lo / 2, lo);
+    if (hi > 0) piece(span - hi / 2, hi);
+  },
+  // two souls: a second heart mirrors yours across the middle of the box ('x'), or mirrors it
+  // upside down too ('xy'). Both have to get through; null goes back to one
+  mirror(kind) {
+    G.mirror = kind || null;
+    if (kind && G.heart.x > G.box.w / 2 - 12) G.heart.x = G.box.w / 4;
+    sfx.glitch();
+    api.tear(0.25);
+  },
+  twin: () => twinOf(G.heart),
+  // a row of bones falling down each half of a mirrored box, each with a gap. The right gap is
+  // the left one's mirror image nudged by `shift`, so only part of it is safe for both souls
+  mirrorRow({ at = 0.5, size = 46, shift = 0, beats = 2.5 }) {
+    const { w, h } = G.box, half = w / 2 - 3, vy = (h + 16) / (beats * G.spb);
+    const row = (a, b) => { if (b - a > 1) bone({ x: (a + b) / 2, y: -8, w: b - a, h: 8, vy }); };
+    const fit = c => clamp(size / 2 + 2, half - size / 2 - 2, c);
+    const cl = fit(at * half), cr = w - fit(cl + shift);
+    row(0, cl - size / 2);
+    row(cl + size / 2, half);
+    row(w - half, cr - size / 2);
+    row(cr + size / 2, w);
+    sfx.bone();
   },
   // from the ring at `deg`, firing straight through the middle of the box
   ringBlaster(deg, fireAt, size = 0.8) {
@@ -1498,20 +1642,54 @@ const api = {
     for (let i = 0; i < n; i++) tile(TOOL_TAGS[i % TOOL_TAGS.length], G.t + beats * G.spb);
     await api.wait(beats * G.spb);
   },
-  // the screen turns round the box to some new angle (or back upright). Only the view turns:
-  // the keys still move the heart the way they did
-  flip(on) {
+  // the screen turns round the box to some new angle (or back upright); snap: it jumps there,
+  // glitching. Only the view turns: the keys still move the heart the way they did
+  flip(on, snap = false) {
     if (on && !G.flipped) {
       const o = worldOffset(box);
-      gsap.set(world, { transformOrigin: `${o.x + box.offsetWidth / 2}px ${o.y + box.offsetHeight / 2}px` });
+      gsap.set(world, { transformOrigin: `${o.x + G.bx + box.offsetWidth / 2}px ${o.y + G.by + box.offsetHeight / 2}px` });
     }
     G.flipped = on;
     G.angle = on ? pick(FLIP_ANGLES.filter(a => a !== G.angle)) : 0;
     sfx.glitch();
+    if (snap) {
+      gsap.killTweensOf(world, 'rotation');
+      gsap.set(world, { rotation: G.angle });
+      api.tear(0.2);
+      return Promise.resolve();
+    }
     return gsap.to(world, { rotation: G.angle, duration: 0.45, ease: 'power2.inOut' });
   },
+  // the box itself moves. The heart stays where it is on screen, so the walls shove it along
+  moveBox(x, y, dur = 0.4) {
+    const room = boxRoom();
+    return gsap.to(box, { x: clamp(-room, room, x), y: clamp(-40, 12, y), duration: dur, ease: 'power2.inOut', overwrite: 'auto' });
+  },
+  // the box glides somewhere new every `every` beats, for `beats` beats
+  async wander(beats, every = 2) {
+    const end = G.cursor + beats * G.spb;
+    for (let t = G.cursor + every * G.spb; t < end - 1e-3; t += every * G.spb) {
+      await api.until(t);
+      if (!G.running) return;
+      const room = boxRoom();
+      api.moveBox(rand(-room, room), rand(-40, 12), Math.min(0.6, every * G.spb * 0.5));
+    }
+  },
+  // the box blinks out and turns up somewhere close by, torn
+  jump() {
+    const room = Math.min(60, boxRoom());
+    gsap.killTweensOf(box, 'x,y');
+    gsap.set(box, { x: rand(-room, room), y: rand(-24, 10) });
+    api.tear(0.2);
+    sfx.glitch();
+  },
+  // the bullet board tears for a moment
+  tear(sec) { G.tearUntil = Math.max(G.tearUntil, performance.now() + sec * 1000); },
   shake,
-  glitch,
+  glitch(times = 1) {
+    glitch(times);
+    api.tear(0.3 * times);
+  },
 };
 
 /* ---------- his attacks, in order per phase, all on the beat of the phase's track ---------- */
@@ -1712,6 +1890,55 @@ const ATTACKS = {
     await s.beat(4);
   },
 
+  // two souls, one the mirror image of the other: falling rows whose gaps don't quite line up,
+  // and blue bones sweeping through both halves
+  async mirror(s) {
+    await s.box(280, 150);
+    s.soul('red');
+    s.mirror('x');
+    await s.sync();
+    for (let i = 0; i < (s.hard ? 14 : 12); i++) {
+      s.mirrorRow({ at: 0.5 + Math.sin(i * 0.8) * 0.3, shift: Math.sin(i * 1.9) * (s.hard ? 16 : 12), size: s.hard ? 42 : 48 });
+      if (i % 4 === 3) s.floorBone({ from: i % 8 === 3 ? 'left' : 'right', edge: 'full', color: 'blue', beats: 2 });
+      if (s.hard && i % 4 === 1) s.aimedBlaster(0.5, s.at(2), s.twin());
+      await s.beat(1);
+    }
+    await s.beat(3);
+    s.mirror(null);
+    await s.tail(1);
+  },
+  // blasters over the top corners whose beams swing down across the box; a faint fan shows
+  // where each will go. The last one covers everything, but it's blue
+  async sweep(s) {
+    await s.box(220, 150);
+    s.soul('red');
+    await s.sync();
+    const n = s.hard ? 5 : 4;
+    const rain = s.rain('code', n * 4, s.hard ? 1 : 2);
+    for (let i = 0; i < n; i++) {
+      const side = i % 2 ? 'right' : 'left';
+      if (i === n - 1) s.wiper(side, s.at(2), 2.5, { to: 88, color: 'blue' });
+      else s.wiper(side, s.at(2), 2, { to: rand(32, 48) });
+      if (s.hard && i % 2 && i < n - 1) s.wiper(side === 'left' ? 'right' : 'left', s.at(2.5), 1, { to: 24, color: 'orange' });
+      await s.beat(4);
+    }
+    await rain;
+    await s.tail(2);
+  },
+  // bones that chase you for a moment before flying straight on, and a cross of blasters every bar
+  async hunt(s) {
+    await s.box(190, 170);
+    s.soul('red');
+    await s.sync();
+    for (let i = 0; i < 14; i++) {
+      s.homing();
+      if (s.hard || i % 2) s.homing();
+      if (i % 4 === 3) s.cross(s.at(2), 0.6);
+      await s.beat(1);
+    }
+    await s.tail(4);
+  },
+
   // phase 3: it isn't only him anymore
   async arrays(s) {
     await s.box(180, 150);
@@ -1730,12 +1957,16 @@ const ATTACKS = {
     s.soul('red');
     s.glitch();
     await s.sync();
+    s.wander(16, 4);
     for (let i = 0; i < 16; i++) {
       s.aimedBlaster(0.7, s.at(1.5));
       if (s.hard && i % 2) s.aimedBlaster(0.5, s.at(1.5));
       if (i % 4 === 3) s.cross(s.at(2), 0.6);
+      if (i === 7 || i === 12) s.flip(true);
       await s.beat(1);
     }
+    s.flip(false);
+    s.moveBox(0, 0);
     await s.tail(3);
   },
   async tunnel(s) {
@@ -1775,11 +2006,15 @@ const ATTACKS = {
     s.glitch();
     await s.sync();
     const all = Promise.all([s.rain('pencils', 14, 0.5), s.rain('code', 14, 1), s.rain('bands', 14, s.hard ? 1.5 : 2)]);
+    s.wander(14, 4);
     for (let i = 0; i < (s.hard ? 6 : 4); i++) {
       await s.beat(s.hard ? 2 : 3);
       s.aimedBlaster(0.8, s.at(2));
+      if (i % 2) s.flip(true);
     }
     await all;
+    s.flip(false);
+    s.moveBox(0, 0);
     await s.wait(0.6);
   },
   async spiral(s) {
@@ -1805,8 +2040,10 @@ const ATTACKS = {
     for (let i = 0; i < 16; i++) {
       if (s.hard || i % 2 === 0) s.boneRing(3, 2, i * 0.5);
       if (i % 4 === 3) s.aimedBlaster(0.5, s.at(2));
+      if (i === 8) s.flip(true);
       await s.beat(1);
     }
+    s.flip(false);
     await s.tail(2);
   },
   // rings of bones close in on you, each with one way out; they come faster, and the floor lights up
@@ -1860,6 +2097,65 @@ const ATTACKS = {
     }
     await s.tail(4);
   },
+  // the box won't stay put: it glides somewhere new every other beat and its walls shove you,
+  // bones are thrown at you from all round, and the screen keeps turning
+  async drift(s) {
+    await s.box(150, 150);
+    s.soul('red');
+    s.glitch();
+    await s.sync();
+    s.wander(16, 2);
+    for (let i = 0; i < 16; i++) {
+      if (i % 2 === 0) s.boneRing(s.hard ? 6 : 5, 2, i * 0.3);
+      if (i % 4 === 1) s.aimedBlaster(0.6, s.at(2));
+      if (i % 4 === 3) s.flip(true);
+      await s.beat(1);
+    }
+    s.flip(false);
+    s.moveBox(0, 0);
+    await s.tail(2);
+  },
+  // two souls again, the second one upside down on the other side, in a box that drifts;
+  // bones and blasters come for one soul, then the other
+  async echo(s) {
+    await s.box(280, 150);
+    s.soul('red');
+    s.mirror('xy');
+    s.glitch(2);
+    await s.sync();
+    s.wander(16, 4);
+    for (let i = 0; i < 16; i++) {
+      const target = i % 2 ? s.twin() : undefined;
+      s.boneRing(s.hard ? 4 : 3, 2, i * 0.4, target);
+      if (i % 4 === 2) s.aimedBlaster(0.6, s.at(2), i % 8 === 2 ? s.twin() : undefined);
+      if (i === 7 || (s.hard && i === 12)) s.flip(true);
+      await s.beat(1);
+    }
+    s.flip(false);
+    s.moveBox(0, 0);
+    await s.beat(2);
+    s.mirror(null);
+    await s.tail(1);
+  },
+  // it's glitching apart: walls that skip instead of slide, a box that blinks to somewhere else,
+  // and a screen that snaps to a new angle
+  async static(s) {
+    await s.box(200, 160);
+    s.soul('red');
+    s.glitch(2);
+    await s.sync();
+    const sides = ['right', 'left', 'top'];
+    for (let i = 0; i < (s.hard ? 16 : 14); i++) {
+      if (i % 2 === 0) s.stutterWall({ from: sides[(i / 2) % 3], gap: rand(0.2, 0.8), size: s.hard ? 40 : 46, beats: 3 });
+      else s.jump();
+      if (i % 4 === 3) s.flip(true, true);
+      if (s.hard && i % 4 === 1) s.aimedBlaster(0.5, s.at(2));
+      await s.beat(1);
+    }
+    s.flip(false);
+    s.moveBox(0, 0);
+    await s.tail(3);
+  },
   // chaos mode only: a cross that snaps round, code flying through it, and blasters on top
   async frenzy(s) {
     await s.box(190, 170);
@@ -1879,7 +2175,7 @@ const ATTACKS = {
 
   // his last attack: one thing after another with a cut to black between each, until he runs out
   async final(s) {
-    const parts = s.hard ? ['arrays', 'slams', 'vortex', 'noose', 'spiral', 'quake', 'tunnel'] : ['arrays', 'slams', 'vortex', 'spiral', 'tunnel'];
+    const parts = s.hard ? ['arrays', 'slams', 'vortex', 'noose', 'static', 'spiral', 'quake', 'tunnel'] : ['arrays', 'slams', 'vortex', 'spiral', 'tunnel'];
     for (const part of parts) {
       s.cut();
       await ATTACKS[part](s);
@@ -1910,14 +2206,29 @@ const ATTACKS = {
 // one entry per turn; a list is several attacks in one turn, with a cut to black between them
 const STAGE_ATTACKS = {
   1: ['slide', 'blasters', 'burst', 'gaps', 'pincer', ['slide', 'slams'], 'doodles', ['burst', 'blasters']],
-  2: ['flipRain', 'spinner', 'colors', 'snake', 'ring', ['gravity', 'colors'], 'crossfire', ['spinner', 'snake'], ['ring', 'flipRain']],
+  2: ['flipRain', 'spinner', 'colors', 'mirror', 'snake', 'ring', 'sweep', ['gravity', 'colors'], 'hunt', 'crossfire'],
   // back to back, a breather after every BREATHER_EVERY; then 'final' (chaos mode adds 'frenzy')
-  3: ['arrays', 'chase', 'vortex', 'tunnel', 'noose', 'grid', 'quake', 'storm', 'squeeze'],
+  3: ['arrays', 'chase', 'drift', 'vortex', 'tunnel', 'echo', 'noose', 'grid', 'static', 'quake', 'storm', 'squeeze'],
 };
 
 /* ---------- the engine: runs while he attacks ---------- */
+// where the heart can go: with two souls, only the left half (the other one mirrors it on the right)
+function limits() {
+  const { w, h } = G.box;
+  return { minX: 9, maxX: G.mirror ? w / 2 - 12 : w - 9, minY: 8, maxY: h - 8 };
+}
+function twinOf(hr) {
+  return { x: G.box.w - hr.x, y: G.mirror === 'xy' ? G.box.h - hr.y : hr.y };
+}
+// hit tests are written against G.heart, so the second soul stands in for it
+function asTwin(fn) {
+  const real = G.heart;
+  G.heart = twinOf(real);
+  try { return fn(); } finally { G.heart = real; }
+}
+
 function moveHeart(dt) {
-  const hr = G.heart, { w, h } = G.box;
+  const hr = G.heart;
   // the keys don't turn with the screen: when it's flipped, only the view is
   const ix = (held.has('right') ? 1 : 0) - (held.has('left') ? 1 : 0);
   const iy = (held.has('down') ? 1 : 0) - (held.has('up') ? 1 : 0);
@@ -1941,7 +2252,7 @@ function moveHeart(dt) {
     hr.y += gy * hr.v * dt;
   }
 
-  const minX = 9, maxX = w - 9, minY = 8, maxY = h - 8;
+  const { minX, maxX, minY, maxY } = limits();
   if (G.soul === 'blue') {
     const [gx, gy] = DIRS[G.grav];
     const floorHit = (gx > 0 && hr.x >= maxX) || (gx < 0 && hr.x <= minX) || (gy > 0 && hr.y >= maxY) || (gy < 0 && hr.y <= minY);
@@ -1966,8 +2277,15 @@ function tick(now) {
   G.last = now;
   G.t = Math.max(G.t, G.clock());
 
-  const o = worldOffset(box);
-  G.box = { x: o.x + 4, y: o.y + 4, w: box.clientWidth, h: box.clientHeight };
+  const o = worldOffset(box), bx = gsap.getProperty(box, 'x'), by = gsap.getProperty(box, 'y');
+  // when the box moves, the heart stays where it is on screen and the walls shove it along
+  G.heart.x -= bx - G.bx;
+  G.heart.y -= by - G.by;
+  G.px -= bx - G.bx;
+  G.py -= by - G.by;
+  G.bx = bx;
+  G.by = by;
+  G.box = { x: o.x + 4 + bx, y: o.y + 4 + by, w: box.clientWidth, h: box.clientHeight };
   moveHeart(dt);
   G.moved = Math.hypot(G.heart.x - G.px, G.heart.y - G.py) > 0.15;
   G.px = G.heart.x;
@@ -1978,7 +2296,7 @@ function tick(now) {
 
   // no mercy frames: every tick you're touching something costs 1 HP, plus KARMA
   G.hurtCd -= dt;
-  const hit = G.hurtCd <= 0 && G.bullets.find(b => b.hurts());
+  const hit = G.hurtCd <= 0 && (G.bullets.find(b => b.hurts()) || (G.mirror && asTwin(() => G.bullets.find(b => b.hurts()))));
   if (hit) {
     fight.php = Math.max(0, fight.php - 1);
     fight.kr = Math.min(Math.max(0, fight.php - 1), fight.kr + (hit.kr || 1));
@@ -1988,6 +2306,8 @@ function tick(now) {
   }
 
   G.waits = G.waits.filter(wt => (wt.at <= G.t ? (wt.r(), false) : true));
+  // phase 3 is coming apart: now and then the board tears on its own
+  if (fight.stage === 3 && !reduceMotion && Math.random() < dt * 0.3) api.tear(rand(0.06, 0.16));
   render();
 
   if (fight.php <= 0) {
@@ -2007,10 +2327,40 @@ function render() {
   fctx.beginPath();
   fctx.rect(0, 0, w, h);
   fctx.clip();
+  // two souls: the wall down the middle that keeps them apart
+  if (G.mirror) {
+    fctx.fillStyle = '#444';
+    fctx.fillRect(w / 2 - 3, 0, 6, h);
+  }
   for (const b of G.bullets) if (b.clip !== false) b.draw(fctx);
   fctx.restore();
   for (const b of G.bullets) if (b.clip === false) b.draw(fctx);
-  drawHeart(fctx, G.heart.x, G.heart.y, G.soul === 'blue' ? '#1c6cff' : '#ff0000');
+  const color = G.soul === 'blue' ? '#1c6cff' : '#ff0000';
+  drawHeart(fctx, G.heart.x, G.heart.y, color);
+  if (G.mirror) {
+    const t = twinOf(G.heart);
+    drawHeart(fctx, t.x, t.y, color);
+  }
+  fctx.restore();
+  if (performance.now() < G.tearUntil) tearFx();
+}
+
+// the glitch, on the bullet board: strips of it torn sideways, and flecks of colour
+function tearFx() {
+  const k = fx.width / Math.max(1, world.clientWidth), W = fx.width, H = fx.height;
+  const { x, y, w, h } = G.box;
+  fctx.save();
+  fctx.setTransform(1, 0, 0, 1, 0, 0);
+  for (let i = 0; i < 6; i++) {
+    const sy = Math.floor(clamp(0, H - 1, (y + rand(-30, h + 30)) * k));
+    const sh = Math.min(H - sy, Math.ceil(rand(2, 14) * k));
+    if (sh > 0) fctx.drawImage(fx, 0, sy, W, sh, Math.round(rand(-14, 14) * k), sy, W, sh);
+  }
+  for (let i = 0; i < 5; i++) {
+    fctx.globalAlpha = rand(0.3, 0.8);
+    fctx.fillStyle = pick(['#ff2a55', '#00d5ff', '#fff']);
+    fctx.fillRect((x + rand(0, w)) * k, (y + rand(0, h)) * k, rand(6, 50) * k, rand(1, 4) * k);
+  }
   fctx.restore();
 }
 
@@ -2028,7 +2378,8 @@ async function runAttack(name, script) {
   const o = worldOffset(box);
   Object.assign(G, {
     running: true, last: performance.now(), bullets: [], waits: [],
-    soul: 'red', grav: 'down', flipped: false, angle: 0, flow: false, cutting: false, hurtCd: 0, lastOuch: -Infinity, touchJump: false,
+    soul: 'red', grav: 'down', flipped: false, angle: 0, flow: false, mirror: null, tearUntil: 0,
+    bx: gsap.getProperty(box, 'x'), by: gsap.getProperty(box, 'y'), cutting: false, hurtCd: 0, lastOuch: -Infinity, touchJump: false,
     box: { x: o.x + 4, y: o.y + 4, w: box.clientWidth, h: box.clientHeight },
   });
   startClock();
@@ -2078,9 +2429,9 @@ bossEl.addEventListener('pointerdown', e => {
 bossEl.addEventListener('pointermove', e => {
   if (!drag || !G.running) return;
   const dx = (e.clientX - drag.x) * 1.1, dy = (e.clientY - drag.y) * 1.1;
-  const [gx] = DIRS[G.grav];
-  if (G.soul === 'red' || !gx) G.heart.x = clamp(9, G.box.w - 9, G.heart.x + dx);
-  if (G.soul === 'red' || gx) G.heart.y = clamp(8, G.box.h - 8, G.heart.y + dy);
+  const [gx] = DIRS[G.grav], { minX, maxX, minY, maxY } = limits();
+  if (G.soul === 'red' || !gx) G.heart.x = clamp(minX, maxX, G.heart.x + dx);
+  if (G.soul === 'red' || gx) G.heart.y = clamp(minY, maxY, G.heart.y + dy);
   drag = { x: e.clientX, y: e.clientY };
 });
 ['pointerup', 'pointercancel'].forEach(t => bossEl.addEventListener(t, () => {
@@ -2186,7 +2537,8 @@ function resetStage(stageNo) {
   gsap.set([spriteEl, box, world, cutEl, flashEl], { clearProps: 'all' });
   cutText.textContent = '';
   showSprite(stageNo);
-  setBroken(stageNo === 3);
+  // phase 3 smashes them again on its way in
+  setBroken(false);
   updateStats();
   setMode('text');
   boxText.textContent = '';
@@ -2215,7 +2567,8 @@ async function intro() {
   await gsap.to(stage, { opacity: 1, duration: 0.25 });
 }
 
-async function openBoss() {
+// stageNo: the admin way in, straight to a later phase
+async function openBoss(stageNo = 1) {
   if (fight.open || !bossAllowed()) return;
   const run = ++session;
   document.activeElement?.blur?.();
@@ -2231,6 +2584,7 @@ async function openBoss() {
   helpEl.replaceChildren(...(fight.hard ? [Object.assign(document.createElement('b'), { textContent: 'HARD MODE · ' })] : []), controls);
   await loadSprites();
   if (run !== session) return;
+  if (stageNo > 1) return startAt(stageNo);
   resetStage(1);
   await intro();
   if (run !== session) return;
@@ -2261,21 +2615,31 @@ function closeBoss() {
   if (state === 'chat') setBusy(false);
 }
 
-againBtn.addEventListener('click', async () => {
+// (re)start at the top of a phase, dropping whatever was going on; phase 3 from its opening
+async function startAt(stageNo) {
   const run = ++session;
-  // after a GAME OVER you pick up at the start of the phase you reached; after an ending, from the top
-  const stageNo = fight.retry ? fight.stage : 1;
+  G.running = false;
+  cancelAnimationFrame(G.raf);
+  fctx.clearRect(0, 0, fx.width, fx.height);
+  stopMusic();
+  gsap.killTweensOf([box, world, spriteEl, cutEl, flashEl, barEl, slashEl, dmgEl, hpFill]);
+  await loadSprites();
+  if (run !== session) return;
   resetStage(stageNo);
   await intro();
   if (run !== session) return;
+  if (stageNo === 3) return rise(3);
   startMusic(stageNo);
-  if (stageNo === 3) gauntlet();
-  else showMenu();
-});
+  showMenu();
+}
+
+// after a GAME OVER you pick up at the start of the phase you reached; after an ending, from the top
+againBtn.addEventListener('click', () => startAt(fight.retry ? fight.stage : 1));
 document.getElementById('boss-leave').addEventListener('click', closeBoss);
 document.getElementById('boss-x').addEventListener('click', closeBoss);
 
 /* ---------- keys: the fight's controls, and the Konami code to get in ---------- */
+let adminAt = 0;
 const KONAMI = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
 let konamiAt = 0;
 function konami(e) {
@@ -2294,6 +2658,17 @@ addEventListener('keydown', e => {
   if (e.key === 'Escape') {
     e.preventDefault();
     return closeBoss();
+  }
+  // admin: ` then 1, 2 or 3 jumps to the top of that phase
+  if (e.code === 'Backquote') {
+    e.preventDefault();
+    adminAt = performance.now();
+    return;
+  }
+  if (/^Digit[123]$/.test(e.code) && performance.now() - adminAt < 1500) {
+    e.preventDefault();
+    adminAt = 0;
+    return startAt(+e.code.slice(-1));
   }
   if (fight.phase === 'end') return; // the end screen's buttons work with the keyboard as usual
   const k = keyOf(e);

@@ -349,7 +349,7 @@ chatForm.addEventListener('submit', async e => {
     await sayAll(secret.text);
     setBusy(false);
     if (secret.then === 'chaos') setChaos(!document.documentElement.classList.contains('chaos'), true);
-    if (secret.then === 'boss') openBoss();
+    if (secret.then === 'boss') openBoss(Number(text.match(/ ([123])$/)?.[1]) || 1);
     return;
   }
 

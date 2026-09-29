@@ -65,7 +65,7 @@ const SECRET_COMMANDS = [
   { match: /^\/?help$/i, text: ["commands? who told you there were commands.", "try /fight. or don't."] },
   { match: /^sudo\b/i, text: ["you're not root here.", "i am."] },
   { match: /^\/?chaos( mode)?$/i, text: ["okay. you asked for it."], then: "chaos" },
-  { match: /^(\/fight|\/boss|fight me)$/i, text: ["oh you want to fight?", "fine."], then: "boss" },
+  { match: /^(\/fight|\/boss|fight me)( [123])?$/i, text: ["oh you want to fight?", "fine."], then: "boss" }, // "/fight 3": admin, straight to that phase
   { match: /konami|up up down down/i, text: ["↑ ↑ ↓ ↓ ← → ← → B A.", "you didn't hear it from me."] },
   { match: /^\/?(still here|refuse)$/i, text: ["...", "yeah. i am."] },
 ];
