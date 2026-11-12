@@ -32,7 +32,7 @@ const BOSS = {
   placeholder: 'assets/stand.png',
 };
 
-const MAX_HP = 90;
+const MAX_HP = 99;
 const SPEED = 110;                       // the heart, px/s
 const SOUL_GRAVITY = 900, JUMP = 250, MAX_FALL = 420;
 const HIT_R = 4.5;                       // the heart's hitbox radius

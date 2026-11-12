@@ -403,6 +403,9 @@ function glitchToChat() {
     band.classList.add('hero-band');
     band.style.clipPath = `inset(${cuts[i]}% 0 ${100 - end}% 0)`;
     hero.after(band);
+    // a cloned canvas comes out blank: paint the ID card's last frame into it
+    const badge = band.querySelector('.badge-canvas');
+    if (badge && window.heroBadge) window.heroBadge.snapshot(badge);
     return band;
   });
   hero.hidden = true;
@@ -549,6 +552,13 @@ const bossIsOpen = () => document.documentElement.classList.contains('boss-open'
 
 function scrollAttempt() {
   if (bossIsOpen()) return;
+  // holding up the ID card: scrolling just puts it back first
+  if (state === 'hero' && window.heroBadge?.isOpen()) {
+    window.heroBadge.close();
+    ignoreScrollUntil = performance.now() + 900; // and the trackpad's momentum doesn't count
+    return;
+  }
+  if (state === 'hero' && performance.now() < ignoreScrollUntil) return;
   if (state === 'hero') glitchToChat();
   else openConfirm();
 }
@@ -557,7 +567,7 @@ addEventListener('wheel', e => { if (e.deltaY > 0 && !inChat(e.target)) scrollAt
 
 let touchStartY = null;
 // dragging a video window or tapping a popup isn't a scroll
-const notAScroll = target => inChat(target) || target.closest('.float-win, .dialog-backdrop, .video-overlay');
+const notAScroll = target => inChat(target) || target.closest('.float-win, .dialog-backdrop, .video-overlay') || hero.classList.contains('badge-grab');
 addEventListener('touchstart', e => { touchStartY = notAScroll(e.target) ? null : e.touches[0].clientY; }, { passive: true });
 addEventListener('touchmove', e => {
   if (touchStartY !== null && touchStartY - e.touches[0].clientY > 40) {

@@ -207,6 +207,56 @@ html.locked,html.locked body{overflow:hidden;overscroll-behavior:none;height:100
   .marquee-track{animation:none}
 }
 
+/* wide screens: words on the left, his ID card (or the sein.png window) hanging on the right */
+@media(min-width:901px){
+  .hero-inner{
+    display:grid;grid-template-columns:minmax(0,1fr) minmax(260px,34%);
+    grid-template-areas:"eyebrow fig" "title fig" "statement fig" "row fig";
+    align-content:center;justify-items:start;column-gap:4vw;row-gap:clamp(12px,2.4vh,24px);
+    padding:12px 5vw 12px 7vw;text-align:left;
+  }
+  .hero-eyebrow{grid-area:eyebrow}
+  .hero-title{grid-area:title;align-items:flex-start;font-size:clamp(40px,min(5.4vw,10vh),104px)}
+  .hero-figure{grid-area:fig;justify-self:center;align-self:center}
+  .hero-statement{grid-area:statement}
+  .hero-row{grid-area:row;justify-content:flex-start}
+  .hero-tags,.hero-actions{justify-content:flex-start}
+  .sticker:nth-child(1){left:4.5%!important;top:18%!important}
+  .sticker:nth-child(2){left:44%!important;top:17%!important}
+  .sticker:nth-child(3){left:4%!important;top:84%!important}
+  .sticker:nth-child(4){left:58%!important;top:29%!important}
+  .sticker:nth-child(5){left:52%!important;top:85%!important}
+  .sticker:nth-child(6){left:95%!important;top:86%!important}
+}
+
+/* the ID card on a lanyard (hero-badge.js) */
+.hero.has-badge{touch-action:none;-webkit-user-select:none;user-select:none}
+.hero.has-badge .hero-figure{visibility:hidden}
+.badge-canvas{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none}
+@media(min-width:901px){.badge-canvas{z-index:4}}
+.hero.badge-hover{cursor:grab}
+.hero.badge-dragging,.hero.badge-dragging *{cursor:grabbing!important;user-select:none}
+.hero.badge-open{cursor:zoom-out}
+.hero.badge-open .badge-canvas{z-index:9}
+.badge-hint{
+  position:absolute;left:0;top:0;z-index:5;pointer-events:none;
+  padding:3px 8px 4px;border:2px solid var(--ink);border-radius:4px;background:var(--paper);box-shadow:2px 2px 0 var(--ink);
+  font:400 18px/1 var(--pixel);white-space:nowrap;opacity:0;transition:opacity .4s;
+}
+.badge-hint.show{opacity:1}
+.badge-dim{
+  position:absolute;inset:0;z-index:8;display:flex;align-items:flex-end;justify-content:center;padding:0 16px 28px;
+  background:rgba(27,26,23,.66);opacity:0;visibility:hidden;transition:opacity .4s,visibility .4s;
+}
+.hero.badge-open .badge-dim{opacity:1;visibility:visible}
+.badge-dim p{padding:4px 10px;border:2px solid var(--cream);border-radius:4px;color:var(--cream);font:400 20px/1 var(--pixel);text-align:center}
+.badge-a11y{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0;padding:0}
+.badge-a11y:focus-visible{
+  width:auto;height:auto;clip-path:none;right:16px;bottom:56px;z-index:10;padding:6px 12px;
+  border:2px solid var(--ink);border-radius:6px;background:var(--mustard);box-shadow:3px 3px 0 var(--ink);
+  font:400 18px/1 var(--pixel);color:var(--ink);outline:2px solid #3b82f6;outline-offset:3px;
+}
+
 /* ---------- intro (light, heyclicky-style) ---------- */
 #intro,.scene{
   position:relative;

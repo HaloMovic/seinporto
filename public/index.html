@@ -465,7 +465,6 @@ res.json({ category: Object.hasOwn(CATEGORIES, category) ? category : 'unknown' 
   </div>
 
 </main>
-
 <!-- secret: a three-phase fight, Undertale: Last Breath style. ↑ ↑ ↓ ↓ ← → ← → B A, "/fight" in the chat, or tap "still here" in the footer 5 times -->
 <section class="boss" id="boss" hidden role="dialog" aria-modal="true" aria-label="Secret fight">
   <div class="boss-world" id="boss-world">
@@ -519,5 +518,7 @@ res.json({ category: Object.hasOwn(CATEGORIES, category) ? category : 'unknown' 
 <script src="replies.js"></script>
 <script src="script.js"></script>
 <script src="bossfight.js"></script>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }</script>
+<script type="module" src="hero-badge.js"></script>
 </body>
 </html>
