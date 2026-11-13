@@ -90,6 +90,9 @@ export function createSketchGun({ weapon = 'pistol' } = {}) {
     keep(geo);
     const g = new THREE.Group();
     g.add(new THREE.Mesh(geo, material));
+    // round parts (barrels, scope tubes, rings) have no hard edges along their length, so they
+    // also get a silhouette, or they'd be two floating circles with nothing between them
+    if (threshold >= 40) g.add(new THREE.Mesh(geo, hullMat));
     const edges = new THREE.EdgesGeometry(geo, threshold);
     g.add(sketchLines(edges.attributes.position.array));
     edges.dispose();
@@ -111,7 +114,7 @@ export function createSketchGun({ weapon = 'pistol' } = {}) {
   const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
   const blob = (rx, ry, rz) => { const g = new THREE.SphereGeometry(1, 16, 12); g.scale(rx, ry, rz); return g; };
   // a tube along z, wider at the front (rFront) or the same both ends
-  const tube = (rBack, rFront, len, seg = 14) => { const g = new THREE.CylinderGeometry(rFront, rBack, len, seg); g.rotateX(Math.PI / 2); return g; };
+  const tube = (rBack, rFront, len, seg = 14, open = false) => { const g = new THREE.CylinderGeometry(rFront, rBack, len, seg, 1, open); g.rotateX(Math.PI / 2); return g; };
   // lines drawn straight onto a surface: serrations, ports, slots
   const marks = (arr, rough = 0.5) => sketchLines(new Float32Array(arr), { rough });
   const rect = (x, y0, y1, z0, z1) => [x, y0, z0, x, y0, z1, x, y1, z0, x, y1, z1, x, y0, z0, x, y1, z0, x, y0, z1, x, y1, z1];
@@ -381,16 +384,26 @@ export function createSketchGun({ weapon = 'pistol' } = {}) {
     gun.add(at(hard(box(0.026, 0.04, 0.058)), 0, -0.04, 0.02));                // magazine
     // the scope: tube, two bells, two turrets, two mounts, and glass you can see
     const sc = at(new THREE.Group(), 0, 0.054, 0.0);
-    sc.add(at(hard(tube(0.016, 0.016, 0.2), 40), 0, 0, 0));
-    sc.add(at(hard(tube(0.018, 0.027, 0.065), 40), 0, 0, 0.13));
-    sc.add(at(hard(tube(0.021, 0.018, 0.045), 40), 0, 0, -0.12));
-    sc.add(at(hard(new THREE.CircleGeometry(0.019, 16), 40, lensMat), 0, 0, -0.1426, 0, Math.PI));
+    sc.add(at(hard(tube(0.021, 0.021, 0.2, 18, true), 40), 0, 0, 0));
+    sc.add(at(hard(tube(0.021, 0.031, 0.065, 18, true), 40), 0, 0, 0.1325));
+    sc.add(at(hard(tube(0.025, 0.021, 0.045, 18, true), 40), 0, 0, -0.1225));
+    // the eyepiece: a thick dark ring round the lens. From the hip the lens is dark glass; aimed,
+    // it becomes a window (it hides the tube and barrel behind it, so the picture fills the ring
+    // like a real scope's does)
+    const LENS_R = 0.0225;
+    const lensDark = at(hard(new THREE.CircleGeometry(LENS_R, 18), 40, lensMat), 0, 0, -0.1452, 0, Math.PI);
+    const portal = new THREE.Mesh(keep(new THREE.CircleGeometry(LENS_R, 28)), keep(new THREE.MeshBasicMaterial({ colorWrite: false })));
+    at(portal, 0, 0, -0.1452, 0, Math.PI);
+    portal.renderOrder = -5;
+    portal.visible = false;
+    const eyepiece = at(new THREE.Mesh(keep(new THREE.RingGeometry(LENS_R, 0.032, 28)), lensMat), 0, 0, -0.1454, 0, Math.PI);
+    sc.add(lensDark, portal, eyepiece);
     const turret = new THREE.CylinderGeometry(0.009, 0.009, 0.022, 12);
-    sc.add(at(hard(turret.clone(), 40), 0, 0.02, 0));
-    sc.add(at(hard(turret, 40), 0.02, 0, 0, 0, 0, Math.PI / 2));
+    sc.add(at(hard(turret.clone(), 40), 0, 0.033, 0));
+    sc.add(at(hard(turret, 40), 0.033, 0, 0, 0, 0, Math.PI / 2));
     gun.add(sc);
-    gun.add(at(hard(box(0.012, 0.022, 0.016)), 0, 0.032, 0.06));
-    gun.add(at(hard(box(0.012, 0.022, 0.016)), 0, 0.032, -0.06));
+    gun.add(at(hard(box(0.012, 0.012, 0.016)), 0, 0.0265, 0.06));
+    gun.add(at(hard(box(0.012, 0.012, 0.016)), 0, 0.0265, -0.06));
     // the bolt on his right: a short rod with a knob, which lifts and slides back
     const bolt = at(new THREE.Group(), -0.016, 0.008, -0.045);
     const rod = new THREE.CylinderGeometry(0.0032, 0.0032, 0.03, 8);
@@ -422,6 +435,7 @@ export function createSketchGun({ weapon = 'pistol' } = {}) {
       gun, hands, right, left,
       muzzle: anchor(gun, 0, 0.004, 0.48), port: anchor(gun, -0.02, 0.02, 0.0),
       base: [0.17, -0.11, -0.86], kick: [0.55, 0.075], rounds: 1, interval: 0, scope: true,
+      sight: anchor(sc, 0, 0, -0.1452), adsDist: 0.085, reticle: 'cross', lens: { dark: lensDark, portal, r: LENS_R },
       rack(tl, t, q) {
         tl.to(left.position, { x: 0, y: 0, z: 0, duration: 0.3 * q, ease: 'power2.out' }, t);
         return cycle(tl, t + 0.15 * q, q);
@@ -458,6 +472,25 @@ export function createSketchGun({ weapon = 'pistol' } = {}) {
   }
   burst.visible = false;
   scene.add(burst);
+
+  // the assembly: every top-level part of the gun, where it belongs, and where it floats in the
+  // ring of parts before snapping home (lowest parts first, so the grip lands in his hand first)
+  let burstTarget = cube;
+  const parts = W.gun.children.filter(o => o.children.length || o.isMesh) // not the empty anchors
+    .map(o => ({ o, home: o.position.clone(), rot: o.rotation.clone(), p: { rad: 0, ang: 0, k: 1, s: 1 },
+      spin: [Math.random() * 3 - 1.5, Math.random() * 3 - 1.5, Math.random() * 3 - 1.5] }))
+    .sort((a, b) => a.home.y - b.home.y);
+  parts.forEach((pt, i) => { pt.a0 = (i / parts.length) * Math.PI * 2; });
+  function placePart(pt) {
+    const { rad, ang, k, s } = pt.p, a = pt.a0 + ang, f = 1 - k, tw = f * (1 + ang);
+    pt.o.position.set(
+      pt.home.x * k + Math.cos(a) * rad * f,
+      pt.home.y * k + (0.01 + Math.sin(a) * rad * 0.8) * f,
+      pt.home.z * k + (0.03 + Math.sin(a * 2) * 0.03) * f,
+    );
+    pt.o.rotation.set(pt.rot.x * k + pt.spin[0] * tw, pt.rot.y * k + pt.spin[1] * tw, pt.rot.z * k + pt.spin[2] * tw);
+    pt.o.scale.setScalar(s);
+  }
 
   // muzzle flash: three takes of a jagged yellow star with spark strokes, flipped on twos
   const flash = new THREE.Group();
@@ -589,16 +622,29 @@ export function createSketchGun({ weapon = 'pistol' } = {}) {
       W.sight.getWorldPosition(eyeNow);
       view.getWorldDirection(fwd);
       eyeNow.addScaledVector(fwd, 4).project(camera);
-      reticle.place((eyeNow.x + 1) / 2 * innerWidth, (1 - eyeNow.y) / 2 * innerHeight, Math.max(0, (ads.v - 0.8) / 0.2));
+      const far = [(eyeNow.x + 1) / 2 * innerWidth, (1 - eyeNow.y) / 2 * innerHeight];
+      if (W.lens) {
+        // the scope's crosshair lives in its lens: same place and size as the lens on screen
+        const on = ads.v > 0.6;
+        W.lens.portal.visible = on;
+        W.lens.dark.visible = !on;
+        W.sight.getWorldPosition(eyeNow);
+        const dist = eyeNow.distanceTo(camera.position);
+        const rPx = W.lens.r / dist / Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) * (innerHeight / 2);
+        eyeNow.project(camera);
+        reticle.place((eyeNow.x + 1) / 2 * innerWidth, (1 - eyeNow.y) / 2 * innerHeight, Math.max(0, (ads.v - 0.6) / 0.4), rPx);
+      } else {
+        reticle.place(far[0], far[1], Math.max(0, (ads.v - 0.8) / 0.2));
+      }
     }
     // the sniper's scope fills the screen; the gun behind it is hidden
-    if (W.scope) {
+    if (W.overlay) {
       scope.move(aim.x, aim.y);
       canvas.style.opacity = String(1 - ads.v);
     }
 
     if (flash.visible) { W.muzzle.getWorldPosition(flash.position); flash.quaternion.copy(camera.quaternion); }
-    if (burst.visible) { cube.getWorldPosition(burst.position); burst.quaternion.copy(camera.quaternion); }
+    if (burst.visible) { burstTarget.getWorldPosition(burst.position); burst.quaternion.copy(camera.quaternion); }
     for (let i = debris.length - 1; i >= 0; i--) {
       const d = debris[i];
       d.age += dt;
@@ -619,7 +665,7 @@ export function createSketchGun({ weapon = 'pistol' } = {}) {
       }
     }
     // fully scoped in, the sniper is hidden behind the scope: nothing to draw
-    if (W.scope && ads.v >= 1) return;
+    if (W.overlay && ads.v >= 1) return;
     renderer.render(scene, camera);
   }
 
@@ -649,7 +695,7 @@ export function createSketchGun({ weapon = 'pistol' } = {}) {
     gsap.killTweensOf(ads);
     if (instant) ads.v = on ? 1 : 0;
     else gsap.to(ads, { v: on ? 1 : 0, duration: reduced ? 0.08 : 0.2, ease: 'power2.out' });
-    if (W.scope) {
+    if (W.overlay) {
       if (on) scope.enter(aim.x, aim.y, instant); else scope.exit(instant);
       if (instant) canvas.style.opacity = on ? '0' : '';
     }
@@ -683,32 +729,55 @@ export function createSketchGun({ weapon = 'pistol' } = {}) {
     show(x, y) {
       aim.x = x; aim.y = y;
       aimRay(x, y, aimNow);
-      gsap.killTweensOf([rig.position, rig.rotation, W.gun.scale, W.grow.scale, kick]);
+      gsap.killTweensOf([rig.position, rig.rotation, cube.rotation, burst.scale, kick, ...parts.map(pt => pt.p)]);
       kick.v = 0;
       W.reset();
       W.gun.visible = false;
       cube.visible = true;
       cube.children[0].material = fillMat;
+      cube.rotation.set(0.35, 0.5, 0.1);
+      burstTarget = cube;
       rig.position.set(0.02, -0.34, 0.06);
       rig.rotation.set(0.6, 0, 0.35);
       start();
       const q = reduced ? 0.35 : 1;
       const tl = gsap.timeline();
+      // the cube rises, spinning faster and faster, and flashes
       tl.to(rig.position, { x: 0, y: 0, z: 0, duration: 0.45 * q, ease: 'power3.out' }, 0)
         .to(rig.rotation, { x: 0, z: 0, duration: 0.5 * q, ease: 'power3.out' }, 0)
+        .to(cube.rotation, { y: 0.5 + Math.PI * 3, x: 0.35 + Math.PI, duration: 0.62 * q, ease: 'power2.in' }, 0)
         .add(() => { cube.children[0].material = yellowMat; burst.visible = true; }, 0.48 * q)
         .fromTo(burst.scale, { x: 0.5, y: 0.5, z: 0.5 }, { x: 1.2, y: 1.2, z: 1.2, duration: 0.18 * q, ease: 'power2.out' }, 0.48 * q)
-        .add(() => { cube.visible = false; burst.visible = false; W.gun.visible = true; }, 0.64 * q)
-        .fromTo(W.gun.scale, { x: 0.4, y: 0.4, z: 0.4 }, { x: 1, y: 1, z: 1, duration: 0.28 * q, ease: 'back.out(2.4)' }, 0.64 * q)
-        .fromTo(W.grow.scale, { x: 0.3, y: 0.3, z: 0.3 }, { x: 1, y: 1, z: 1, duration: 0.26 * q, ease: 'back.out(2)' }, 0.72 * q);
-      const end = W.rack(tl, 0.92 * q, q);
+        // it bursts into every part of the gun, which fly out into a ring and swirl...
+        .add(() => {
+          cube.visible = false; burst.visible = false; W.gun.visible = true;
+          parts.forEach(pt => { Object.assign(pt.p, { rad: 0, ang: 0, k: 0, s: 0.2 }); placePart(pt); });
+        }, 0.64 * q);
+      const T = 1.25 * q, gap = (0.5 * q) / parts.length;
+      parts.forEach((pt, i) => {
+        const onUpdate = () => placePart(pt);
+        tl.to(pt.p, { rad: 0.15, s: 1, duration: 0.3 * q, ease: 'back.out(2)', onUpdate }, 0.64 * q)
+          .to(pt.p, { ang: 1.6, duration: 0.8 * q, ease: 'power1.out', onUpdate }, 0.64 * q)
+          // ...then snap home one by one, grip first, each one jolting his hands
+          .to(pt.p, { k: 1, duration: 0.2 * q, ease: 'power3.in', onUpdate, onComplete: () => {
+            placePart(pt);
+            gsap.fromTo(rig.position, { y: -0.007 }, { y: 0, duration: 0.12, ease: 'power2.out' });
+          } }, T + i * gap);
+      });
+      // assembled: one more flash around the whole gun, and it settles with a wobble
+      const done = T + 0.7 * q;
+      tl.add(() => { burstTarget = W.gun; burst.visible = true; }, done)
+        .fromTo(burst.scale, { x: 0.9, y: 0.9, z: 0.9 }, { x: 2.6, y: 2.6, z: 2.6, duration: 0.2 * q, ease: 'power2.out' }, done)
+        .add(() => { burst.visible = false; }, done + 0.2 * q)
+        .fromTo(rig.rotation, { z: -0.2 }, { z: 0, duration: 0.45 * q, ease: 'elastic.out(1, 0.4)' }, done);
+      const end = W.rack(tl, done + 0.15 * q, q);
       tl.fromTo(rig.rotation, { x: 0 }, { x: -0.05, duration: 0.06, yoyo: true, repeat: 1 }, end - 0.2 * q);
       return tl.then(() => { ready = true; });
     },
 
     // fires the weapon's rounds (one, or a burst); scoped in, the kick throws the reticle up
     fire() {
-      if (W.scope && aiming) scope.kick(reduced);
+      if (W.overlay && aiming) scope.kick(reduced);
       for (let i = 0; i < W.rounds; i++) gsap.delayedCall(i * W.interval, round);
     },
 
@@ -738,16 +807,27 @@ function makeReticle(kind) {
   const el = document.createElement('div');
   el.className = 'sketch-reticle';
   el.setAttribute('aria-hidden', 'true');
-  el.innerHTML = kind === 'holo'
+  el.innerHTML = kind === 'cross'
+    // a duplex reticle: thick posts from the rim, hair-thin lines in the middle, mil dots, and
+    // the dark shading a scope has round the edge of its picture
+    ? '<svg viewBox="-100 -100 200 200"><defs><radialGradient id="sg-shade"><stop offset="72%" stop-color="#000" stop-opacity="0"/><stop offset="100%" stop-color="#000" stop-opacity=".6"/></radialGradient></defs>'
+      + '<circle r="100" fill="url(#sg-shade)"/><circle r="99" fill="none" stroke="#1b1a17" stroke-width="2"/>'
+      + '<path d="M-100 0 H-42 M42 0 H100 M0 42 V100 M0 -100 V-42" stroke="#1b1a17" stroke-width="5"/>'
+      + '<path d="M-42 0 H-3 M3 0 H42 M0 -42 V-3 M0 3 V42" stroke="#1b1a17" stroke-width="0.9"/>'
+      + [-30, -20, -10, 10, 20, 30].map(v => `<circle cx="${v}" r="1.5" fill="#1b1a17"/><circle cy="${v}" r="1.5" fill="#1b1a17"/>`).join('')
+      + '</svg>'
+    : kind === 'holo'
     ? '<svg viewBox="-20 -20 40 40"><circle r="13" fill="none" stroke="#ff3b30" stroke-width="1.6"/><circle r="1.8" fill="#ff3b30"/><path d="M0 -13 V-17 M0 13 V17 M-13 0 H-17 M13 0 H17" stroke="#ff3b30" stroke-width="1.6"/></svg>'
     : '<svg viewBox="-20 -20 40 40"><circle r="2.6" fill="#ff3b30"/><circle r="5" fill="none" stroke="rgba(255,59,48,.25)" stroke-width="3"/></svg>';
+  if (kind === 'cross') el.classList.add('scope');
   if (kind) document.body.append(el);
   return {
     el,
-    place(x, y, alpha) {
+    place(x, y, alpha, r) {
       if (!kind) return;
       el.style.transform = `translate(${x}px, ${y}px)`;
       el.style.opacity = alpha;
+      if (r) Object.assign(el.style, { width: `${r * 2}px`, height: `${r * 2}px`, left: `${-r}px`, top: `${-r}px` });
     },
   };
 }
@@ -808,10 +888,14 @@ function roughen(src, rough = 1) {
     d.subVectors(b, a);
     const len = d.length();
     if (len < 1e-6) continue;
-    a.addScaledVector(d, -r() * 0.07 * rough).add(m1.set(j(), j(), j()));
-    b.addScaledVector(d, r() * 0.07 * rough).add(m1.set(j(), j(), j()));
-    if (len > 0.022 && r() < 0.33 * rough) {
-      const t = 0.3 + r() * 0.4, gap = 0.05 + r() * 0.08;
+    // short segments are pieces of a curve (a barrel's rim, a scope's bell): they must meet
+    // end to end, so they get no overshoot, no gap and only a whisper of wobble
+    const curve = len < 0.016, w = curve ? 0.25 : 1;
+    if (!curve) { a.addScaledVector(d, -r() * 0.05 * rough); b.addScaledVector(d, r() * 0.05 * rough); }
+    a.add(m1.set(j() * w, j() * w, j() * w));
+    b.add(m1.set(j() * w, j() * w, j() * w));
+    if (len > 0.03 && r() < 0.16 * rough) {
+      const t = 0.3 + r() * 0.4, gap = Math.min(0.03 + r() * 0.05, 0.006 / len);
       m1.lerpVectors(a, b, t - gap / 2);
       m2.lerpVectors(a, b, t + gap / 2);
       out.push(a.x, a.y, a.z, m1.x, m1.y, m1.z, m2.x, m2.y, m2.z, b.x, b.y, b.z);

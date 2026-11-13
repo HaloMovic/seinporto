@@ -277,6 +277,9 @@ html.locked,html.locked body{overflow:hidden;overscroll-behavior:none;height:100
 .logo .dim{color:var(--muted);font-weight:400}
 .status{display:flex;align-items:center;gap:8px;color:var(--muted);font-family:var(--mono);font-size:12px}
 .pulse{width:7px;height:7px;border-radius:50%;background:#28c840;animation:pulse 1.6s ease-in-out infinite}
+/* while the gun is on him, the status pill turns into a clock */
+.status.hostage{color:var(--red)}
+.status.hostage .pulse{background:var(--red);animation-duration:.8s}
 @keyframes pulse{50%{opacity:.3}}
 .lock-pill{
   font-family:var(--mono);font-size:12px;
@@ -416,7 +419,29 @@ html.locked,html.locked body{overflow:hidden;overscroll-behavior:none;height:100
   filter:drop-shadow(0 -10px 40px rgba(0,0,0,.15));
 }
 .flash{position:absolute;inset:0;z-index:30;background:#fff;opacity:0;pointer-events:none}
-.holes{position:absolute;inset:0;z-index:14;pointer-events:none}
+/* a shot window: a spider-web crack round the hole */
+.glass-crack{position:absolute;z-index:3;width:170px;height:170px;margin:-85px 0 0 -85px;pointer-events:none}
+.glass-crack svg{display:block;width:100%;height:100%;overflow:visible}
+.glass-crack path,.glass-crack circle{fill:none;stroke:rgba(20,20,20,.55);stroke-width:.7;stroke-linejoin:round}
+.glass-crack circle{stroke-dasharray:6 5 3 7;stroke-width:.5}
+.float-win .hole{z-index:4}
+/* shoot the chaos switch: the thing that comes out of it */
+.eye-mass{position:fixed;inset:0;z-index:24;pointer-events:none}
+.eye-mass svg{width:100%;height:100%;overflow:visible}
+.eye-mass .m-body{fill:#0b0b0b}
+.eye-mass .m-red{fill:#ff2a55;opacity:.55;transform:translate(5px,-2px)}
+.eye-mass .m-cyan{fill:#00d5ff;opacity:.55;transform:translate(-5px,2px)}
+#intro .logo.shot{pointer-events:none}
+/* the letters of a shot speech bubble, falling */
+.bubble-debris{position:fixed;z-index:22;padding:12px 16px;pointer-events:none;font-size:15px;line-height:1.4;color:var(--fg)}
+.bubble-debris span{display:inline-block}
+.holes{position:absolute;inset:0;z-index:12;pointer-events:none}
+/* with the gun out: holes are in the wall behind him, his bubble is in front of them, and the gun
+   (z-index 15) stays in front of everything */
+#intro.aiming .stage{z-index:13}
+/* and his bubble moves up above his head, so it never covers him with his hands up */
+#intro.aiming .bubble{top:auto;bottom:74%;left:50%;width:max-content;max-width:min(260px,80vw)}
+#intro.aiming .bubble::after{left:50%;margin-left:-6px}
 .hole{
   position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;
   background:radial-gradient(circle,#0b0b0b 0 32%,#3a3834 40%,rgba(0,0,0,.25) 55%,transparent 70%);
@@ -526,6 +551,7 @@ html.locked,html.locked body{overflow:hidden;overscroll-behavior:none;height:100
 .still-bubble::after{left:30%}
 /* no room above his head: the bubble sits beside it, tail pointing left */
 .still-bubble.side::after{left:-7px;bottom:auto;top:18px;transform:rotate(135deg)}
+@media(max-width:760px){.still-bubble{max-width:210px;font-size:13px}}
 #stillhere .lock-pill{display:flex;align-items:center;gap:8px;transition:background .3s,border-color .3s}
 #stillhere .lock-pill.unlocked{background:#f1f6ef;border-color:#cfdcc9}
 #stillhere .lock-pill .pulse{background:#8fb08a}
@@ -544,6 +570,7 @@ html.ads-on,html.ads-on *{cursor:none!important}
   filter:drop-shadow(0 0 3px rgba(255,59,48,.55));
 }
 .sketch-reticle svg{display:block;width:100%;height:100%}
+.sketch-reticle.scope{filter:none}
 /* phones have no right-click: a button to look down the sight */
 .ads-toggle{
   position:fixed;right:16px;bottom:18px;z-index:18;height:40px;padding:0 16px;border-radius:999px;
@@ -558,38 +585,7 @@ html.ads-on,html.ads-on *{cursor:none!important}
   left:calc(var(--x) - var(--r) * 1.1628);top:calc(var(--y) - var(--r) * 1.1628);
 }
 
-/* ---------- act 2: the flat cutout, then the 3D room ---------- */
-#act2{background:#efe3cf}
-.scene-3d{position:absolute;inset:0;width:100%;height:100%;display:block}
-.act2-flat{position:absolute;inset:0;z-index:2;display:flex;align-items:flex-end;justify-content:center;background:var(--bg)}
-.act2-fig{display:block;height:min(66vh,600px);width:auto;margin-bottom:9vh}
-.act2-grid{
-  position:absolute;inset:0;z-index:3;pointer-events:none;opacity:0;
-  background:
-    linear-gradient(rgba(43,179,163,.4) 1px,transparent 1px) 0 0/36px 36px,
-    linear-gradient(90deg,rgba(43,179,163,.4) 1px,transparent 1px) 0 0/36px 36px;
-}
-.act2-scan{
-  position:absolute;left:0;right:0;top:0;z-index:4;height:3px;opacity:0;pointer-events:none;
-  background:#2bb3a3;box-shadow:0 0 22px 6px rgba(43,179,163,.55);
-}
-.act2-bubble{left:0;top:0;z-index:6;max-width:280px;text-align:left;pointer-events:none}
-.act2-bubble::after{left:50%;margin-left:-6px}
-.act2-vignette{
-  position:absolute;inset:0;z-index:12;pointer-events:none;opacity:0;
-  background:radial-gradient(ellipse at center,transparent 42%,rgba(150,8,16,.62) 100%);
-}
-#act2 .vitals-win{z-index:8}
-#act2.aiming,#act2.aiming *{cursor:crosshair}
-.act2-hint:empty{display:none}
-#act2.aiming .act2-hint{
-  z-index:16;left:50%;right:auto;transform:translateX(-50%);padding:6px 12px;border-radius:999px;
-  background:rgba(255,255,255,.85);color:var(--fg);white-space:nowrap;
-}
-@media(max-width:760px){
-  .act2-fig{height:52vh;height:52svh}
-  .act2-bubble,.still-bubble{max-width:210px;font-size:13px}
-}
+
 
 @media(max-width:1100px){
   .float-win{width:160px}
@@ -637,42 +633,188 @@ html.ads-on,html.ads-on *{cursor:none!important}
 .eyebrow{font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:10px}
 .panel h2{font-size:clamp(36px,6vw,64px);font-weight:600;letter-spacing:-.045em;line-height:1;margin-bottom:48px}
 
-/* journey: he sits at the end of the line, looking back over the years */
-.journey-stage{--pad:clamp(40px,6vw,70px);position:relative;padding-top:var(--pad)}
-#journey h2{max-width:calc(100% - clamp(150px,24vw,300px))}
-.journey-me{
-  position:absolute;right:-10px;bottom:calc(100% - var(--pad) - 16px);z-index:2;
-  width:clamp(150px,24vw,300px);pointer-events:none;
+/* ---------- journey: the Mading, as a murder board ----------
+   cork in a wooden frame; every paper is pinned, red string runs pin to pin (an SVG drawn by
+   script.js over the papers). Papers sit where --x/--y/--w put them and can be dragged. He sits
+   on the floor in front of the board, bottom right. */
+.mading{
+  --ink:#1a1a1a;--paper:#fffdf6;--yellow:#facc15;--cork:#c49359;--wood:#9a6a3d;--string:#c8102e;
+  --serif:'Instrument Serif',Georgia,serif;--pixel:'VT323',ui-monospace,monospace;
+  --hard:5px 5px 0 rgba(26,26,26,.85);
+  position:relative;margin:clamp(36px,5vw,60px) 0 clamp(40px,6vw,90px);padding:13px;
 }
-.journey-me img{
-  display:block;width:100%;height:auto;transform-origin:70% 100%;
-  filter:drop-shadow(0 10px 14px rgba(0,0,0,.10));
+.mading-board{
+  position:relative;border:1.5px solid var(--ink);
+  background:
+    radial-gradient(circle,rgba(90,50,20,.38) 0 1px,transparent 1.6px) 0 0/11px 13px,
+    radial-gradient(circle,rgba(255,232,196,.38) 0 1px,transparent 1.6px) 5px 7px/9px 8px,
+    radial-gradient(circle,rgba(60,30,10,.28) 0 1.3px,transparent 2px) 2px 3px/17px 15px,
+    radial-gradient(ellipse at 30% 20%,rgba(255,220,170,.25),transparent 60%),
+    var(--cork);
+  box-shadow:inset 0 0 40px rgba(60,30,10,.35),0 0 0 11px var(--wood),0 0 0 12.5px var(--ink),9px 9px 0 12.5px var(--ink);
 }
-.journey-me::after{
-  content:"";position:absolute;left:8%;right:4%;bottom:-6px;height:14px;border-radius:50%;
-  background:radial-gradient(closest-side,rgba(0,0,0,.18),transparent);z-index:-1;
+.mading-items{list-style:none;position:relative;height:clamp(860px,78vw,940px)}
+/* string runs on the cork behind the papers, so it never covers what you're reading. Each pin
+   belongs to its paper, so a paper dragged on top covers the pins underneath it */
+.m-strings{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
+.m-string{fill:none;stroke:var(--string);stroke-width:2;stroke-linecap:round}
+.m-string-shadow{fill:none;stroke:rgba(40,20,5,.22);stroke-width:2;transform:translate(1.5px,3px)}
+
+/* every paper: placed by its variables, pinned at its anchor, draggable */
+.m-drag{
+  position:absolute;left:var(--x);top:var(--y);width:var(--w);rotate:var(--r,0deg);
+  color:var(--ink);cursor:grab;touch-action:pan-y;-webkit-user-select:none;user-select:none;
+  transition:scale .2s,box-shadow .2s;
+}
+.m-drag.is-dragging{cursor:grabbing;scale:1.04;box-shadow:12px 16px 0 rgba(26,26,26,.5)}
+@media(hover:hover){.m-drag:not(.is-dragging):hover{scale:1.02}}
+.m-anchor{
+  position:absolute;left:50%;top:8px;z-index:5;width:16px;height:16px;margin:-8px 0 0 -8px;border-radius:50%;
+  background:radial-gradient(circle at 34% 30%,rgba(255,255,255,.8) 0 16%,transparent 20%),var(--pin,#e23b2e);
+  border:1.5px solid var(--ink);box-shadow:2.5px 3.5px 0 rgba(0,0,0,.3);
+}
+.m-grade{font:400 20px/1 var(--pixel);letter-spacing:.02em}
+.m-title{font:italic 400 30px/1 var(--serif);margin:6px 0 4px}
+.m-text{font-size:14px;line-height:1.45}
+.m-photo{
+  display:grid;place-items:center;overflow:hidden;pointer-events:none;
+  background:repeating-linear-gradient(45deg,#ece6d6 0 10px,#f6f1e4 10px 20px);
+}
+.m-photo span{font:400 18px/1 var(--pixel);color:#8a877f}
+.m-photo img{display:block;width:100%;height:100%;object-fit:cover}
+
+/* where everything sits (desktop) */
+[data-id="mast"]{--x:3%;--y:3%;--w:min(44%,430px);--r:-2deg}
+[data-id="g9"]{--x:69%;--y:3%;--w:min(27%,250px);--r:3deg}
+[data-id="q"]{--x:50%;--y:6%;--w:min(17%,168px);--r:-5deg}
+[data-id="g7"]{--x:2.5%;--y:36%;--w:min(29%,280px);--r:-2.5deg}
+[data-id="g8"]{--x:36%;--y:30%;--w:min(31%,300px);--r:2deg}
+[data-id="g10"]{--x:35%;--y:60%;--w:min(30%,290px);--r:-3deg}
+[data-id="g11"]{--x:71%;--y:52%;--w:min(24%,230px);--r:3deg}
+[data-id="ev"]{--x:6%;--y:80%;--w:min(19%,180px);--r:4deg}
+
+/* masthead */
+.m-mast{display:flex;flex-direction:column;gap:6px;padding:20px 22px 18px;background:var(--yellow);border:1.5px solid var(--ink);box-shadow:var(--hard)}
+.m-mast-kicker{font:400 20px/1 var(--pixel)}
+.m-mast-title{font:800 clamp(44px,6.4vw,84px)/.86 var(--ui);letter-spacing:-.05em}
+.m-mast-sub{font:italic 400 clamp(17px,1.8vw,21px)/1.15 var(--serif)}
+
+/* grade 7: ruled notebook paper, red margin, punched holes */
+.m-notebook{
+  padding:30px 20px 30px 50px;line-height:24px;border:1.5px solid var(--ink);box-shadow:var(--hard);
+  background:
+    linear-gradient(90deg,transparent 38px,#f0a39b 38px 39.5px,transparent 39.5px),
+    repeating-linear-gradient(transparent 0 23px,#b8d1e4 23px 24px) 0 6px,
+    var(--paper);
+}
+.m-notebook::before{
+  content:"";position:absolute;left:12px;top:26px;bottom:26px;width:14px;
+  background:radial-gradient(circle,var(--cork) 0 5px,var(--ink) 5.5px 6.8px,transparent 7.2px) 0 0/14px 33.33% repeat-y;
+}
+.m-notebook .m-title{margin:0 0 2px;line-height:24px}
+.m-notebook .m-text{line-height:24px;padding-bottom:64px}
+.m-snap{
+  position:absolute;right:-12px;bottom:-18px;width:clamp(80px,8.5vw,100px);aspect-ratio:4/5;rotate:5deg;
+  padding:6px 6px 16px;background:#fff;border:1.5px solid var(--ink);box-shadow:3px 3px 0 rgba(26,26,26,.85);
+}
+.m-snap span{font-size:15px}
+
+/* grade 8: competition ticket with a perforated stub */
+.m-ticket{display:flex;background:#ffe7b0;border:1.5px solid var(--ink);box-shadow:var(--hard)}
+.m-ticket-main{position:relative;flex:1;padding:18px;border-right:2px dashed var(--ink)}
+.m-ticket-main::before,.m-ticket-main::after{
+  content:"";position:absolute;right:-9px;width:16px;height:16px;border-radius:50%;background:var(--cork);border:1.5px solid var(--ink);
+}
+.m-ticket-main::before{top:-9px}
+.m-ticket-main::after{bottom:-9px}
+.m-ticket-kicker{font:400 16px/1 var(--pixel);letter-spacing:.08em;color:#9a4b0b;margin-bottom:10px}
+.m-ticket .m-grade{font-size:24px;margin-bottom:6px}
+.m-ticket-stub{width:54px;display:grid;place-items:center}
+.m-ticket-stub span{writing-mode:vertical-rl;font:400 20px/1 var(--pixel);letter-spacing:.1em}
+
+/* grade 9: polaroid with a gold star */
+.m-polaroid{padding:18px 14px 20px;background:#fff;border:1.5px solid var(--ink);box-shadow:var(--hard)}
+.m-polaroid .m-photo{aspect-ratio:1;border:1.5px solid var(--ink);margin-bottom:14px}
+.m-caption{font:italic 400 28px/1 var(--serif);margin:4px 0 8px}
+.m-star{
+  position:absolute;top:-22px;right:-18px;rotate:14deg;pointer-events:none;
+  font-style:normal;font-size:58px;line-height:1;color:var(--yellow);-webkit-text-stroke:1.5px var(--ink);text-shadow:3px 3px 0 var(--ink);
 }
 
-/* journey: dots on a line, a window per year */
-.timeline{
-  list-style:none;position:relative;
-  display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:16px;
-  padding-top:44px;
+/* grade 10: TSA committee badge */
+.m-badge{background:var(--paper);border:1.5px solid var(--ink);border-radius:10px;box-shadow:var(--hard)}
+.m-badge-head{
+  position:relative;display:flex;justify-content:space-between;align-items:baseline;
+  padding:30px 14px 9px;background:var(--ink);color:var(--yellow);border-radius:8px 8px 0 0;
 }
-.timeline::before{content:"";position:absolute;left:0;right:0;top:14px;height:1px;background:var(--line)}
-.tl-item{position:relative}
-.tl-age{
-  position:absolute;top:-38px;left:0;display:flex;align-items:center;gap:8px;
-  font-family:var(--mono);font-size:12px;color:var(--muted);
+.m-badge-head::before{content:"";position:absolute;top:9px;left:50%;width:44px;height:12px;margin-left:-22px;border-radius:6px;background:var(--cork)}
+.m-badge .m-anchor{top:15px;z-index:6}
+.m-badge-head span{font:400 19px/1 var(--pixel);letter-spacing:.14em}
+.m-badge-head b{font:800 28px/1 var(--ui);letter-spacing:-.02em}
+.m-badge-body{display:grid;grid-template-columns:clamp(60px,6.2vw,76px) 1fr;gap:12px;padding:12px 14px 16px}
+.m-badge .m-photo{aspect-ratio:3/4;border:1.5px solid var(--ink)}
+.m-badge .m-photo span{font-size:14px;text-align:center}
+.m-badge .m-grade{margin-bottom:6px}
+
+/* grade 11: sticky note with a lifted corner */
+.m-sticky{
+  padding:26px 20px 30px;border:1.5px solid var(--ink);box-shadow:var(--hard);
+  background:linear-gradient(rgba(0,0,0,.05) 0 18px,transparent 18px),#fde68a;
 }
-.tl-age::before{content:"";width:9px;height:9px;border-radius:50%;background:var(--fg);box-shadow:0 0 0 4px var(--bg)}
-.tl-card{transition:transform .25s,box-shadow .25s}
-@media(hover:hover){.tl-card:hover{transform:translateY(-4px) rotate(-.6deg);box-shadow:0 1px 2px rgba(0,0,0,.04),0 26px 60px rgba(0,0,0,.14)}}
-.tl-photo{
-  aspect-ratio:4/5;display:grid;place-items:center;background:var(--soft);
-  font-family:var(--mono);font-size:11px;color:var(--muted);text-align:center;padding:8px;
+.m-sticky::after{
+  content:"";position:absolute;right:-1.5px;bottom:-1.5px;width:30px;height:30px;
+  background:linear-gradient(135deg,#f6d55c 50%,var(--cork) 50%);border-top:1.5px solid var(--ink);border-left:1.5px solid var(--ink);
 }
-.tl-text{padding:10px 12px 12px;font-size:13px;line-height:1.4;color:var(--muted);border-top:1px solid var(--line)}
+.m-sticky .m-grade{margin-bottom:8px}
+.m-sticky .m-text{font:italic 400 23px/1.2 var(--serif)}
+
+/* clue cards */
+.m-card{padding:22px 14px 16px;background:#fff;border:1.5px solid var(--ink);box-shadow:var(--hard)}
+.m-q{background:linear-gradient(transparent 16px,#f0a39b 16px 17.5px,transparent 17.5px),repeating-linear-gradient(transparent 0 21px,#cfe0ec 21px 22px) 0 18px,#fff}
+.m-card-text{font:italic 400 21px/1.15 var(--serif)}
+.m-card-text b{font:800 17px/1 var(--ui);font-style:normal;letter-spacing:-.01em}
+.m-circled{display:inline-block;padding:0 6px;border:2px solid var(--string);border-radius:50%;color:var(--string);font-style:normal;rotate:-6deg}
+.m-evidence{background:#e8cf9f}
+.m-evidence::before{content:"";position:absolute;top:8px;left:12px;width:12px;height:12px;border-radius:50%;background:var(--cork);border:1.5px solid var(--ink)}
+.m-evidence-tag{font:400 19px/1 var(--pixel);letter-spacing:.1em;color:var(--string);margin:0 0 6px 18px}
+
+/* he sits on the floor in front of his board */
+.journey-me{
+  position:absolute;right:clamp(-30px,-2vw,-8px);bottom:clamp(-60px,-4vw,-20px);z-index:950;
+  width:clamp(130px,21vw,270px);pointer-events:none;
+}
+.journey-me img{display:block;width:100%;height:auto;transform-origin:70% 100%;filter:drop-shadow(0 8px 10px rgba(0,0,0,.18))}
+.journey-me::after{
+  content:"";position:absolute;left:6%;right:2%;bottom:-6px;height:16px;border-radius:50%;
+  background:radial-gradient(closest-side,rgba(0,0,0,.3),transparent);z-index:-1;
+}
+
+/* tablet: a taller board, two loose columns */
+@media(max-width:1000px){
+  .mading-items{height:1240px}
+  [data-id="mast"]{--x:3%;--y:2%;--w:62%}
+  [data-id="q"]{--x:70%;--y:3%;--w:25%}
+  [data-id="g7"]{--x:3%;--y:20%;--w:46%}
+  [data-id="g8"]{--x:52%;--y:21%;--w:45%}
+  [data-id="g9"]{--x:54%;--y:42%;--w:40%}
+  [data-id="g10"]{--x:4%;--y:48%;--w:46%}
+  [data-id="g11"]{--x:40%;--y:77.5%;--w:38%}
+  [data-id="ev"]{--x:4%;--y:79%;--w:31%}
+}
+/* phone: one zig-zag column down a tall board */
+@media(max-width:620px){
+  .mading{padding:12px 11px}
+  .mading-items{height:2240px}
+  [data-id="mast"]{--x:4%;--y:1%;--w:90%}
+  [data-id="g7"]{--x:5%;--y:11.5%;--w:84%}
+  [data-id="q"]{--x:46%;--y:27%;--w:50%}
+  [data-id="g8"]{--x:4%;--y:34%;--w:88%}
+  [data-id="g9"]{--x:12%;--y:46%;--w:72%}
+  [data-id="g10"]{--x:5%;--y:66.5%;--w:86%}
+  [data-id="g11"]{--x:8%;--y:79%;--w:76%}
+  [data-id="ev"]{--x:4%;--y:91%;--w:50%}
+  .journey-me{width:120px;right:-6px;bottom:-30px}
+}
 
 /* toolkit: he holds out his hand, the cards fan out above it, then flip to the other deck */
 .toolkit{
@@ -819,9 +961,6 @@ html.ads-on,html.ads-on *{cursor:none!important}
 
 @media(max-width:860px){
   .built-grid{grid-template-columns:1fr}
-  .timeline{grid-template-columns:none;grid-auto-flow:column;grid-auto-columns:62%;overflow-x:auto;scroll-snap-type:x mandatory;padding-bottom:48px;margin-bottom:-36px}
-  .tl-item{scroll-snap-align:start}
-  .timeline::before{right:auto;width:calc(62% * 5 + 16px * 4)}
 }
 @media(max-width:760px){
   #contact-form textarea{font-size:16px}

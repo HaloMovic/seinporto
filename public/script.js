@@ -21,14 +21,14 @@ const touchOnly = matchMedia('(hover: none)').matches;
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
 // 'hero' -> 'glitching' -> 'chat' -> 'confirm' -> 'aiming' -> 'shot' (act 1)
-// -> 'act2' -> 'act2-armed' -> 'act2-shot' -> 'act3' -> 'enter' -> 'done'
+// -> 'act3' -> 'enter' -> 'done'   (act 2 goes between 'shot' and 'act3'; it's being rebuilt)
 let state = 'hero';
 
 /* ---------- repeat visitors ---------- */
 // someone who's been here before and mashes through the cutscenes gets roasted in act 3
 const hasVisited = (() => { try { return localStorage.getItem('sein_visited') === 'true'; } catch { return false; } })();
 function markVisited() { try { localStorage.setItem('sein_visited', 'true'); } catch {} }
-const SPAM_STATES = new Set(['shot', 'act2', 'act2-shot']);
+const SPAM_STATES = new Set(['shot']);
 let spam = 0;
 const countSpam = () => { if (SPAM_STATES.has(state)) spam++; };
 addEventListener('pointerdown', countSpam, true);
@@ -49,10 +49,12 @@ document.querySelectorAll('.float-win').forEach(win => {
   gsap.set(win, { rotation: parseFloat(getComputedStyle(win).getPropertyValue('--r')) || 0 });
   gsap.to(win, { y: '+=12', duration: gsap.utils.random(2.4, 3.6), repeat: -1, yoyo: true, ease: 'sine.inOut' });
 
+  // the buttons only work while chatting; with a gun out, clicking them is a shot at the window
   win.querySelector('.dot.red').addEventListener('click', () => {
+    if (state !== 'chat') return;
     gsap.to(win, { opacity: 0, scale: 0.85, duration: 0.25, onComplete: () => { win.hidden = true; } });
   });
-  win.querySelector('.dot.yellow').addEventListener('click', () => win.classList.toggle('minimized'));
+  win.querySelector('.dot.yellow').addEventListener('click', () => { if (state === 'chat') win.classList.toggle('minimized'); });
   win.querySelector('.dot.green').addEventListener('click', () => openVideo(win));
 
   // drag by the window; a press that doesn't move is a click (opens the video full screen)
@@ -667,7 +669,7 @@ async function gunshotSound() {
 }
 
 /* ---------- aiming down the sight: hold right-click, or the aim button on a phone ---------- */
-const ARMED = new Set(['aiming', 'act2-armed']);
+const ARMED = new Set(['aiming']);
 const adsBtn = document.createElement('button');
 adsBtn.type = 'button';
 adsBtn.className = 'ads-toggle';
@@ -694,19 +696,21 @@ addEventListener('pointerdown', e => {
 });
 addEventListener('pointerup', e => { if (e.button === 2) activeGun?.setAim(false); });
 addEventListener('contextmenu', e => {
-  if (activeGun && (ARMED.has(state) || state === 'shot' || state === 'act2-shot')) e.preventDefault();
+  if (activeGun && (ARMED.has(state) || state === 'shot')) e.preventDefault();
 });
 
-// bullet holes where they clicked: a tight spread for a burst, a bigger one for the sniper
-function makeHoles(x, y) {
+// bullet holes where they clicked: a tight spread for a burst, a bigger one for the sniper.
+// `into` puts them inside something that moves (a window that's about to fall)
+function makeHoles(x, y, into = null) {
   const n = activeGun?.rounds || 1;
+  const box = into ? into.getBoundingClientRect() : { left: 0, top: 0 };
   return Array.from({ length: n }, (_, i) => {
     const hole = document.createElement('div');
     hole.className = 'hole';
-    hole.style.left = x + (i ? gsap.utils.random(-28, 28) : 0) + 'px';
-    hole.style.top = y + (i ? gsap.utils.random(-34, 10) : 0) + 'px';
+    hole.style.left = x - box.left + (i ? gsap.utils.random(-28, 28) : 0) + 'px';
+    hole.style.top = y - box.top + (i ? gsap.utils.random(-34, 10) : 0) + 'px';
     if (activeGun?.weapon === 'sniper') hole.style.scale = '1.4';
-    holes.appendChild(hole);
+    (into || holes).appendChild(hole);
     gsap.fromTo(hole, { scale: 0.3, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.15, delay: i * (activeGun?.interval || 0) });
     return hole;
   });
@@ -723,6 +727,414 @@ const shotImg = new Image();
 let shotImgReady = false;
 shotImg.onload = () => { shotImgReady = true; };
 
+/* ---------- the aiming scene: shoot him, shoot his stuff, or miss ----------
+   Only a shot that lands on him (his actual pixels, not his box) ends it. The floating windows
+   crack and fall, misses leave holes, and he talks the whole time. Lines live in replies.js. */
+const COOLDOWN = { pistol: 300, smg: 450, sniper: 1150 }; // ms between shots
+let lastShot = 0, misses = 0, windowsDown = 0, idleLines = [];
+let quipTimer = 0, quipToken = 0, quipBusy = false;
+
+// a line in his bubble while aiming (the chat is hidden, so nothing goes in the log)
+async function quip(text) {
+  const token = ++quipToken;
+  clearTimeout(quipTimer);
+  quipBusy = true;
+  bubble.hidden = false;
+  gsap.fromTo(bubble, { opacity: 0, y: 6, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 0.2 });
+  bubbleText.textContent = '';
+  startTalking();
+  for (const ch of text) {
+    if (token !== quipToken) return false;
+    bubbleText.textContent += ch;
+    await sleep(/[.?!]/.test(ch) ? 120 : 24);
+  }
+  if (token !== quipToken) return false;
+  quipBusy = false;
+  stopTalking();
+  // and if a while goes by with nothing said (and no story beat coming), he fills the silence
+  quipTimer = setTimeout(() => {
+    if (state !== 'aiming') return;
+    const next = AIM_STORY[storyIdx];
+    if (next && next.t - heldFor < 5) return;
+    if (!idleLines.length) idleLines = gsap.utils.shuffle([...AIM_LINES.idle]);
+    quip(idleLines.pop());
+  }, gsap.utils.random(7500, 9500));
+  return true;
+}
+function stopQuips() {
+  quipToken++;
+  quipBusy = false;
+  clearTimeout(quipTimer);
+  stopTalking();
+  bubble.hidden = true;
+}
+
+/* ---------- the long way round: hold the gun on him for 5 minutes and he lets you in ----------
+   The clock only runs while the tab is visible. Shooting his windows or the wall doesn't stop
+   it; only shooting him does. The story and the ending lines live in replies.js. */
+const introStatus = screens.intro.querySelector('.status');
+let heldFor = 0, heldTimer = 0, storyIdx = 0;
+
+function startHoldClock() {
+  heldFor = 0;
+  storyIdx = 0;
+  let last = performance.now(), nudged = false;
+  clearInterval(heldTimer);
+  heldTimer = setInterval(() => {
+    const now = performance.now();
+    if (!document.hidden) heldFor += (now - last) / 1000;
+    last = now;
+    if (state !== 'aiming') { clearInterval(heldTimer); return; }
+    const s = Math.floor(heldFor);
+    introStatus.classList.add('hostage');
+    introStatus.innerHTML = `<i class="pulse"></i>held at gunpoint · ${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+    // a nudge, for anyone who hasn't realised waiting is a choice
+    if (!nudged && heldFor > 45) { nudged = true; hint.textContent = `${armedHint()} · or don't`; }
+    if (heldFor >= SPARE_AFTER && !quipBusy) { spareHim(); return; }
+    const beat = AIM_STORY[storyIdx];
+    if (beat && heldFor >= beat.t && !quipBusy) {
+      const i = storyIdx++;
+      if (beat.image) swapFigure(beat.image);
+      // if a shot cuts him off mid-story, he picks the line up again afterwards
+      quip(windowsDown && beat.ifShot ? beat.ifShot : beat.line).then(done => {
+        if (!done && storyIdx === i + 1 && state === 'aiming') storyIdx = i;
+      });
+    }
+  }, 250);
+}
+
+// five minutes and no shot: the gun goes down, he says his piece, and you're through
+async function spareHim() {
+  state = 'spared';
+  clearInterval(heldTimer);
+  removeEventListener('click', onAimClick);
+  removeEventListener('pointermove', aim);
+  showAimButton(false);
+  hint.textContent = '';
+  introStatus.classList.remove('hostage');
+  introStatus.innerHTML = '<i class="pulse"></i>released';
+  screens.intro.classList.remove('aiming');
+  if (activeGun) activeGun.hide();
+  else gsap.to(gun, { y: innerHeight + 80, duration: 0.6, ease: 'power3.in' });
+  stopQuips();
+  await sleep(700);
+  for (const line of SPARED_LINES) {
+    await quip(line);
+    await sleep(readTime(line));
+  }
+  stopQuips();
+  gsap.set(cover, { backgroundColor: '#fbfaf7' });
+  await gsap.to(cover, { opacity: 1, duration: 0.7, ease: 'power2.in' });
+  screens.intro.classList.add('hidden');
+  activeGun?.hide(true);
+  playAct3({ spared: true });
+}
+
+// is this point on him? checks the cutout's own pixels, with a few pixels of slack
+const hitCanvas = document.createElement('canvas');
+let hitCtx = null, hitSrc = '';
+function hitsSein(x, y) {
+  const iw = sit.naturalWidth, ih = sit.naturalHeight;
+  if (!iw) return false;
+  const r = sit.getBoundingClientRect();
+  // the image is object-fit: contain, sitting on the bottom edge, centred
+  const s = Math.min(r.width / iw, r.height / ih);
+  const left = r.left + (r.width - iw * s) / 2, top = r.bottom - ih * s;
+  if (hitSrc !== sit.currentSrc) {
+    hitCanvas.width = iw;
+    hitCanvas.height = ih;
+    hitCtx = hitCanvas.getContext('2d', { willReadFrequently: true });
+    hitCtx.clearRect(0, 0, iw, ih);
+    hitCtx.drawImage(sit, 0, 0);
+    hitSrc = sit.currentSrc;
+  }
+  return [[0, 0], [6, 0], [-6, 0], [0, 6], [0, -6]].some(([dx, dy]) => {
+    const px = Math.floor((x + dx - left) / s), py = Math.floor((y + dy - top) / s);
+    return px >= 0 && py >= 0 && px < iw && py < ih && hitCtx.getImageData(px, py, 1, 1).data[3] > 40;
+  });
+}
+const nearSein = (x, y) => {
+  const r = sit.getBoundingClientRect();
+  const dx = Math.max(r.left + r.width * 0.2 - x, 0, x - (r.right - r.width * 0.2));
+  const dy = Math.max(r.top - y, 0, y - r.bottom);
+  return Math.hypot(dx, dy) < 70;
+};
+
+// the bang, the kick and the flash, for shots that don't end the scene
+async function fireAt(e, flashOpacity) {
+  await gunshotSound();
+  if (activeGun) {
+    activeGun.fire(e.clientX, e.clientY);
+  } else {
+    const pose = gunPose(e.clientX, e.clientY);
+    gsap.killTweensOf(gun);
+    gsap.timeline()
+      .set(gun, pose)
+      .to(gun, { y: pose.y + 30, rotation: pose.rotation - 7, duration: 0.06, ease: 'power4.out' })
+      .to(gun, { y: pose.y, rotation: pose.rotation, duration: 0.4, ease: 'power2.out' });
+  }
+  gsap.fromTo(flash, { opacity: flashOpacity }, { opacity: 0, duration: 0.25 });
+  gsap.fromTo(screens.intro, { x: -4 }, { x: 0, duration: 0.3, ease: 'elastic.out(1, 0.3)' });
+}
+
+// one bullet hole, on the page or inside something that moves (a falling window)
+function addHole(x, y, into = null) {
+  const box = into ? into.getBoundingClientRect() : { left: 0, top: 0 };
+  const hole = document.createElement('div');
+  hole.className = 'hole';
+  hole.style.left = `${x - box.left}px`;
+  hole.style.top = `${y - box.top}px`;
+  if (activeGun?.weapon === 'sniper') hole.style.scale = '1.4';
+  (into || holes).appendChild(hole);
+  gsap.fromTo(hole, { scale: 0.3, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.15 });
+}
+
+// a window takes the hit: a spider-web crack, a jolt, then it falls off the screen
+function breakWindow(win, x, y) {
+  win.classList.add('shot-down');
+  const box = win.getBoundingClientRect();
+  addHole(x, y, win);
+  const crack = document.createElement('div');
+  crack.className = 'glass-crack';
+  crack.style.left = `${x - box.left}px`;
+  crack.style.top = `${y - box.top}px`;
+  let rays = '';
+  for (let i = 0; i < 9; i++) {
+    let a = (i / 9) * Math.PI * 2 + Math.random() * 0.4, r = 4, d = 'M0 0';
+    while (r < 46) { r += gsap.utils.random(7, 14); a += gsap.utils.random(-0.25, 0.25); d += ` L${(Math.cos(a) * r).toFixed(1)} ${(Math.sin(a) * r).toFixed(1)}`; }
+    rays += `<path d="${d}"/>`;
+  }
+  crack.innerHTML = `<svg viewBox="-50 -50 100 100">${rays}<circle r="14" /><circle r="27" /></svg>`;
+  win.appendChild(crack);
+  win.querySelector('video')?.pause();
+  gsap.killTweensOf(win); // stop its idle bob
+  gsap.timeline()
+    .to(win, { x: `+=${gsap.utils.random(-16, 16)}`, rotation: `+=${gsap.utils.random(-9, 9)}`, duration: 0.08, ease: 'power3.out' })
+    .to(win, { y: innerHeight + 260, rotation: gsap.utils.random(-60, 60), duration: 1.1, ease: 'power2.in' }, 0.45)
+    .set(win, { display: 'none' });
+
+  windowsDown++;
+  const key = win.querySelector('.win-title').textContent.replace('.mov', '').trim();
+  quip(pickFresh(AIM_LINES.window[key] || AIM_LINES.miss)).then(async () => {
+    const left = [...document.querySelectorAll('.float-win')].filter(w => !w.hidden && !w.classList.contains('shot-down') && w.offsetParent);
+    if (!left.length && state === 'aiming') { await sleep(500); if (state === 'aiming') quip(AIM_LINES.allWindows); }
+  });
+}
+
+/* ---------- the bits of the page you can shoot ---------- */
+const SHOOTABLE_UI = '#bubble, .logo, .lock-pill, .chaos-toggle, .status, .hint';
+function shootUI(el, x, y) {
+  addHole(x, y);
+  const L = AIM_LINES.ui;
+  if (el.matches('#bubble')) {
+    // whatever he was saying falls out of the bubble, letter by letter
+    const box = el.getBoundingClientRect();
+    const debris = document.createElement('div');
+    debris.className = 'bubble-debris';
+    Object.assign(debris.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px` });
+    debris.innerHTML = [...bubbleText.textContent].map(ch => `<span>${ch === ' ' ? '&nbsp;' : ch}</span>`).join('');
+    document.body.append(debris);
+    stopQuips();
+    gsap.to(debris.children, {
+      y: () => gsap.utils.random(120, 300), x: () => gsap.utils.random(-30, 30), rotation: () => gsap.utils.random(-160, 160),
+      opacity: 0, duration: 1, ease: 'power2.in', stagger: { each: 0.012, from: 'random' }, onComplete: () => debris.remove(),
+    });
+    setTimeout(() => { if (state === 'aiming') quip(pickFresh(L.bubble)); }, 650);
+  } else if (el.matches('.logo')) {
+    // the name falls apart, letter by letter
+    el.classList.add('shot');
+    const letters = [...el.textContent].map((ch, i) => `<span class="${i >= 4 ? 'dim' : ''}" style="display:inline-block">${ch}</span>`).join('');
+    el.innerHTML = letters;
+    gsap.to(el.children, {
+      y: () => gsap.utils.random(140, 320), x: () => gsap.utils.random(-40, 40), rotation: () => gsap.utils.random(-140, 140),
+      opacity: 0, duration: 1.1, ease: 'power2.in', stagger: { each: 0.035, from: 'random' },
+    });
+    quip(pickFresh(L.logo));
+  } else if (el.matches('.lock-pill')) {
+    // it nearly breaks, then pulls itself together
+    gsap.timeline()
+      .add(() => { el.textContent = 'scroll unl—'; })
+      .fromTo(el, { x: -6, rotation: -4 }, { x: 0, rotation: 0, duration: 0.5, ease: 'elastic.out(1, 0.3)' })
+      .add(() => { el.textContent = 'scroll locked'; }, 0.7);
+    quip(pickFresh(L.lock));
+  } else if (el.matches('.chaos-toggle')) {
+    if (el.classList.contains('shot')) { quip(pickFresh(L.chaosAgain)); return; }
+    el.classList.add('shot');
+    unleashMass(el);
+  } else if (el.matches('.status')) {
+    gsap.fromTo(el, { x: 8 }, { x: 0, duration: 0.5, ease: 'elastic.out(1, 0.3)' });
+    quip(pickFresh(L.clock));
+  } else if (el.matches('.hint')) {
+    // the instructions drop off the bottom, and come back sulking
+    el.classList.add('shot');
+    gsap.timeline()
+      .to(el, { y: 90, rotation: gsap.utils.random(-25, 25), opacity: 0, duration: 0.6, ease: 'power2.in' })
+      .add(() => { el.textContent = L.hintAfter; })
+      .to(el, { y: 0, rotation: 0, opacity: 1, duration: 0.5, ease: 'back.out(2)' }, '+=1.2');
+    quip(pickFresh(L.hint));
+  }
+}
+
+/* ---------- shoot the chaos switch and something gets out ----------
+   a boiling black mass full of mismatched eyes creeps out of the switch, looks at you, then
+   pulls back in and leaves chaos mode on */
+function unleashMass(from) {
+  const r = from.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  const el = document.createElement('div');
+  el.className = 'eye-mass';
+  el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = '<svg><path class="m-red"/><path class="m-cyan"/><path class="m-body"/><g class="m-eyes"></g></svg>';
+  document.body.append(el);
+  const [red, cyan, body] = el.querySelectorAll('path');
+  const eyesG = el.querySelector('.m-eyes');
+  const NS = 'http://www.w3.org/2000/svg';
+  const R = Math.hypot(innerWidth, innerHeight) * 0.42;
+  // it spreads towards the middle of the screen
+  const dir = Math.atan2(innerHeight * 0.55 - cy, innerWidth * 0.5 - cx);
+  const COLORS = ['#ff8fd1', '#ffe066', '#c6a4ff', '#ffb0e6', '#fff2a0', '#9ff0d5'];
+  const eyes = Array.from({ length: 16 }, () => {
+    const g = document.createElementNS(NS, 'g');
+    const s = gsap.utils.random(9, 24);
+    g.innerHTML = `<g class="m-lid"><ellipse rx="${s}" ry="${s * gsap.utils.random(0.55, 0.85)}" fill="${pick(COLORS)}" stroke="#0b0b0b" stroke-width="2"/>`
+      + `<circle class="m-pupil" r="${s * 0.42}" fill="#0b0b0b"/><circle r="${s * 0.13}" cx="${-s * 0.25}" cy="${-s * 0.25}" fill="#fff"/></g>`;
+    eyesG.appendChild(g);
+    return { g, s, a: dir + gsap.utils.random(-1.2, 1.2), d: Math.sqrt(Math.random()) * 0.8, tilt: gsap.utils.random(-30, 30), pupil: g.querySelector('.m-pupil'), lid: g.querySelector('.m-lid') };
+  });
+  // blinking, out of sync
+  eyes.forEach(e => {
+    gsap.set(e.lid, { transformOrigin: '50% 50%' });
+    gsap.timeline({ repeat: -1, repeatDelay: gsap.utils.random(1.4, 3.6), delay: Math.random() * 2 })
+      .to(e.lid, { scaleY: 0.08, duration: 0.07, ease: 'power2.in' })
+      .to(e.lid, { scaleY: 1, duration: 0.1, ease: 'power2.out' });
+  });
+
+  const grow = { k: 0 };
+  let t = 0, step = -1, raf = 0;
+  const shape = (k, jitter) => {
+    let d = '';
+    for (let i = 0; i <= 56; i++) {
+      const a = (i / 56) * Math.PI * 2;
+      const toward = Math.cos(a - dir) * 0.5 + 0.5; // it reaches further towards the middle
+      const rr = R * k * (0.18 + 0.62 * toward ** 1.6) * (1 + 0.22 * Math.sin(a * 5 + t * 2.4) + 0.12 * Math.sin(a * 11 - t * 3.1) + jitter * (Math.random() - 0.5));
+      d += `${i ? 'L' : 'M'}${(cx + Math.cos(a) * rr).toFixed(1)} ${(cy + Math.sin(a) * rr).toFixed(1)}`;
+    }
+    return `${d}Z`;
+  };
+  const tick = () => {
+    raf = requestAnimationFrame(tick);
+    t += 1 / 60;
+    // the outline redraws on twos, like it's flickering
+    const s = Math.floor(t * 12);
+    if (s !== step) {
+      step = s;
+      body.setAttribute('d', shape(grow.k, 0.18));
+      red.setAttribute('d', shape(grow.k, 0.3));
+      cyan.setAttribute('d', shape(grow.k, 0.3));
+    }
+    eyes.forEach(e => {
+      const reach = R * grow.k * (0.18 + 0.62 * (Math.cos(e.a - dir) * 0.5 + 0.5) ** 1.6) * e.d;
+      const x = cx + Math.cos(e.a) * reach, y = cy + Math.sin(e.a) * reach;
+      const show = grow.k > 0.15 ? Math.min(1, (grow.k - 0.15) * 3) : 0;
+      e.g.setAttribute('transform', `translate(${x.toFixed(1)} ${y.toFixed(1)}) rotate(${e.tilt}) scale(${show.toFixed(2)})`);
+      // every eye looks at you
+      const dx = pointer.x - x, dy = pointer.y - y, l = Math.hypot(dx, dy) || 1;
+      e.pupil.setAttribute('cx', (dx / l * e.s * 0.32).toFixed(1));
+      e.pupil.setAttribute('cy', (dy / l * e.s * 0.22).toFixed(1));
+    });
+  };
+  tick();
+  gsap.fromTo(screens.intro, { x: -10 }, { x: 0, duration: 0.6, ease: 'elastic.out(1, 0.25)' });
+  quip(AIM_LINES.ui.chaos[0]);
+  gsap.timeline()
+    .to(grow, { k: 1, duration: 1.5, ease: 'power2.out' })
+    .add(() => { if (state === 'aiming') quip(AIM_LINES.ui.chaos[1]); }, 2.2)
+    .to(grow, { k: 0, duration: 0.8, ease: 'power3.in' }, 3.8)
+    .add(() => {
+      cancelAnimationFrame(raf);
+      el.remove();
+      setChaos(true);
+      if (state === 'aiming') quip(AIM_LINES.ui.chaos[2]);
+    });
+}
+
+// a miss: the hole stays, he flinches away from it
+function missAt(x, y) {
+  addHole(x, y);
+  const r = sit.getBoundingClientRect();
+  gsap.fromTo(sit, { x: x < r.left + r.width / 2 ? 10 : -10 }, { x: 0, duration: 0.5, ease: 'elastic.out(1, 0.3)' });
+}
+
+// a random line, but never the one he just said
+let lastLine = '';
+function pickFresh(lines) {
+  const options = lines.filter(l => l !== lastLine);
+  lastLine = pick(options.length ? options : lines);
+  return lastLine;
+}
+
+// where one round lands: a window, something on the page, or the wall. Returns what it hit.
+function landRound(x, y, target) {
+  const win = target?.closest?.('.float-win');
+  if (win && !win.classList.contains('shot-down')) { breakWindow(win, x, y); return 'window'; }
+  if (win) { addHole(x, y, win); return 'window'; }
+  const ui = target?.closest?.(SHOOTABLE_UI);
+  if (ui && screens.intro.contains(ui)) { shootUI(ui, x, y); return 'ui'; }
+  missAt(x, y);
+  return nearSein(x, y) ? 'near' : 'miss';
+}
+
+// the shot that hits him ends the scene
+function killShot(x, y) {
+  removeEventListener('click', onAimClick);
+  clearInterval(heldTimer);
+  introStatus.classList.remove('hostage');
+  stopQuips();
+  shoot({ clientX: x, clientY: y });
+}
+
+// where the mouse is right now (an SMG burst follows it, round by round)
+const pointer = { x: innerWidth / 2, y: innerHeight / 2 };
+addEventListener('pointermove', e => { pointer.x = e.clientX; pointer.y = e.clientY; }, { passive: true });
+
+async function onAimClick(e) {
+  if (state !== 'aiming') return;
+  const now = performance.now();
+  if (now - lastShot < (COOLDOWN[activeGun?.weapon] || 300)) return;
+  lastShot = now;
+  if (hitsSein(e.clientX, e.clientY)) return killShot(e.clientX, e.clientY);
+  const rounds = activeGun?.rounds || 1, gap = (activeGun?.interval || 0) * 1000;
+  await fireAt(e, 0.3);
+  if (state !== 'aiming') return;
+  // every round lands where the cursor is at that moment: the first where you clicked
+  const hits = [landRound(e.clientX, e.clientY, e.target)];
+  for (let i = 1; i < rounds; i++) {
+    await sleep(gap);
+    if (state !== 'aiming') return;
+    const { x, y } = pointer;
+    if (hitsSein(x, y)) return killShot(x, y);
+    hits.push(landRound(x, y, document.elementFromPoint(x, y)));
+  }
+  // windows and page bits already said their piece; plain misses get one line per trigger pull
+  if (hits.includes('window') || hits.includes('ui')) return;
+  misses++;
+  const m = AIM_LINES.miss;
+  let line;
+  if (hits.includes('near')) line = pickFresh(AIM_LINES.near);
+  else if (misses <= m.length) line = m[misses - 1];
+  else line = pickFresh(m.slice(-3));
+  quip(line);
+}
+
+function beginAimScene() {
+  misses = 0;
+  windowsDown = 0;
+  lastShot = performance.now();
+  addEventListener('click', onAimClick);
+  quip(AIM_LINES.first);
+  startHoldClock();
+}
+
 async function startAiming() {
   state = 'aiming';
   setBusy(true);
@@ -730,6 +1142,7 @@ async function startAiming() {
   hint.textContent = touchOnly ? 'tap to shoot' : 'click to shoot';
   stopTalking();
   bubble.hidden = true;
+  gsap.set(bubble, { xPercent: -50 }); // centred over his head while aiming (see #intro.aiming .bubble)
   swapFigure(AIMED_AT_IMAGE);
   if (SHOT_IMAGE) shotImg.src = SHOT_IMAGE;
 
@@ -744,7 +1157,7 @@ async function startAiming() {
     await activeGun.show(cx, cy);
     showAimButton(true);
     addEventListener('pointermove', aim);
-    addEventListener('click', shoot, { once: true });
+    beginAimScene();
     return;
   }
 
@@ -755,7 +1168,7 @@ async function startAiming() {
       ...start, duration: 0.8, ease: 'power3.out',
       onComplete: () => {
         addEventListener('pointermove', aim);
-        addEventListener('click', shoot, { once: true });
+        beginAimScene();
       },
     });
 }
@@ -769,7 +1182,6 @@ async function shoot(e) {
   hint.textContent = '';
   showAimButton(false);
   prepareGameOverAudio();
-  loadAct2(); // the 3D scene downloads while he's dying
   await gunshotSound();
 
   makeHoles(e.clientX, e.clientY);
@@ -938,7 +1350,7 @@ function playTragic() {
           .to(cover, { opacity: 1, duration: 0.6, ease: 'power2.in' })
           .add(() => {
             gameover.classList.add('hidden');
-            playAct2();
+            playAct3();
           });
       });
     }, TONE_END);
@@ -1122,27 +1534,8 @@ function playFuse(px, done) {
   playSyncedBuffer(tl, reversedShatter);
 }
 
-/* ---------- act 2: "ew, this looks so AI. hold on, let me fix that." ---------- */
-const act2El = document.getElementById('act2');
-const act2Canvas = document.getElementById('scene-3d');
-const act2Flat = document.getElementById('act2-flat');
-const act2Fig = document.getElementById('act2-fig');
-const act2Grid = document.getElementById('act2-grid');
-const act2Scan = document.getElementById('act2-scan');
-const act2Bubble = document.getElementById('act2-bubble');
-const act2Vignette = document.getElementById('act2-vignette');
-const act2Hint = document.getElementById('act2-hint');
-const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
-let act2Module = null; // the three.js scene, fetched from the first gunshot on
-let act3d = null;
-let bubbleAnchor = null; // () => ({ x, y }): where the act 2 bubble's tail points
-
-function loadAct2() {
-  act2Module ??= import('./act2-scene.js').catch(err => { console.warn('[act2]', err); return null; });
-  return act2Module;
-}
-
-// a speech bubble outside the chat: types the line, nothing goes in the chat log
+/* ---------- speech bubbles outside the chat (act 3) ---------- */
+// types the line into a bubble; nothing goes in the chat log
 async function typeLine(bub, text) {
   const p = bub.querySelector('p');
   if (bub.hidden) {
@@ -1158,243 +1551,6 @@ async function typeLine(bub, text) {
 
 // how long a finished line stays up before the next thing happens: longer lines get longer
 const readTime = text => 450 + text.length * 14;
-
-function hideBubble(bub) {
-  return gsap.to(bub, { opacity: 0, duration: 0.2, onComplete: () => { bub.hidden = true; } });
-}
-
-// keeps the act 2 bubble over his head, inside the screen
-function placeBubble() {
-  if (!bubbleAnchor || act2Bubble.hidden) return;
-  const { x, y } = bubbleAnchor();
-  const half = act2Bubble.offsetWidth / 2;
-  gsap.set(act2Bubble, { left: Math.min(Math.max(x, half + 12), innerWidth - half - 12), top: Math.max(y - 14, act2Bubble.offsetHeight + 12) });
-}
-
-async function playAct2() {
-  // no WebGL, or the scene didn't load: skip straight to the ending, without the joke
-  const mod = await Promise.race([loadAct2(), sleep(4000).then(() => null)]);
-  if (mod) {
-    try { act3d = mod.createAct2(act2Canvas); } catch (err) { console.warn('[act2]', err); }
-  }
-  if (!act3d) return playAct3({ talk: false });
-
-  state = 'act2';
-  act2El.classList.remove('hidden');
-  gsap.set(act2El, { opacity: 1 });
-  gsap.set(act2Flat, { clipPath: 'inset(0% 0% 0% 0%)' });
-  gsap.set([act2Grid, act2Scan, act2Vignette], { opacity: 0 });
-  gsap.set(act2Bubble, { xPercent: -50, yPercent: -100 });
-  act2Bubble.hidden = true;
-  act3d.wireframe(true);
-  bubbleAnchor = () => {
-    const r = act2Fig.getBoundingClientRect();
-    return { x: r.left + r.width * 0.55, y: r.top + r.height * 0.03 };
-  };
-  gsap.ticker.add(placeBubble);
-
-  // beat 1: the critique
-  await gsap.to(cover, { opacity: 0, duration: 0.4 });
-  await sleep(200);
-  await typeLine(act2Bubble, '...');
-  await sleep(600);
-  const critique = 'Ew, this looks so AI. Hold on, let me fix that.';
-  await typeLine(act2Bubble, critique);
-  await sleep(readTime(critique) - 300);
-
-  // beat 2: the render pass. a scanline wipes the flat cutout away and the room is
-  // drawn in wireframe underneath, then filled in
-  await hideBubble(act2Bubble);
-  const wipe = reducedMotion ? 0.3 : 0.9;
-  act3d.settle(reducedMotion ? 0.01 : wipe + 1.0);
-  await gsap.timeline()
-    .to(act2Grid, { opacity: 1, duration: 0.15 })
-    .set(act2Scan, { opacity: 1, top: '0%' })
-    .to(act2Scan, { top: '100%', duration: wipe, ease: 'power1.inOut' })
-    .to(act2Flat, { clipPath: 'inset(100% 0% 0% 0%)', duration: wipe, ease: 'power1.inOut' }, '<')
-    .to(act2Grid, { opacity: 0, duration: 0.35 })
-    .set(act2Scan, { opacity: 0 });
-  await sleep(200);
-  act3d.wireframe(false);
-  gsap.fromTo(act2Canvas, { filter: 'brightness(1.5)' }, { filter: 'brightness(1)', duration: 0.6, ease: 'power2.out' });
-  await sleep(reducedMotion ? 200 : 750);
-
-  // beat 3: the dare
-  bubbleAnchor = () => act3d.headPoint();
-  await typeLine(act2Bubble, 'Go back. Shoot me again, I dare you.');
-  await sleep(450);
-  armAct2();
-}
-
-function armAct2() {
-  state = 'act2-armed';
-  act2El.append(flash);
-  act2El.classList.add('aiming');
-  act2Hint.textContent = armedHint();
-  const c = act3d.chestPoint();
-  // the same weapon as the first time: it was picked once and stays picked
-  if (activeGun) {
-    activeGun.show(c.x, c.y).then(() => {
-      showAimButton(true);
-      addEventListener('pointermove', aim);
-      addEventListener('click', shootAgain, { once: true });
-    });
-    return;
-  }
-  act2El.append(gun);
-  const start = gunPose(c.x, c.y);
-  gsap.killTweensOf(gun);
-  gsap.fromTo(gun,
-    { ...start, y: innerHeight + 40, visibility: 'visible' },
-    {
-      ...start, duration: 0.8, ease: 'power3.out',
-      onComplete: () => {
-        addEventListener('pointermove', aim);
-        addEventListener('click', shootAgain, { once: true });
-      },
-    });
-}
-
-async function shootAgain(e) {
-  state = 'act2-shot';
-  removeEventListener('pointermove', aim);
-  act2Hint.textContent = '';
-  showAimButton(false);
-  act2El.classList.remove('aiming');
-  getAudioCtx().resume().catch(() => {});
-  await gunshotSound();
-  hideBubble(act2Bubble);
-  bubbleAnchor = null;
-
-  const tl = gsap.timeline()
-    .set(flash, { opacity: 0.9 })
-    .to(flash, { opacity: 0, duration: 0.35 })
-    // a crimson edge that pulses in and drains away
-    .fromTo(act2Vignette, { opacity: 1 }, { opacity: 0.4, duration: 0.9, ease: 'power2.out' }, 0)
-    .to(act2Vignette, { opacity: 0, duration: 1.4 }, 1.8);
-  if (activeGun) {
-    activeGun.fire(e.clientX, e.clientY);
-    tl.add(() => activeGun.hide(), 1.3);
-  } else {
-    const pose = gunPose(e.clientX, e.clientY);
-    gsap.killTweensOf(gun);
-    gsap.set(gun, pose);
-    tl.to(gun, { y: pose.y + 30, rotation: pose.rotation - 7, duration: 0.06, ease: 'power4.out' }, 0)
-      .to(gun, { y: pose.y, rotation: pose.rotation, duration: 0.4, ease: 'power2.out' }, 0.06)
-      .to(gun, { y: innerHeight + 80, duration: 0.7, ease: 'power3.in' }, 1.2);
-  }
-
-  act3d.shoot({ reduced: reducedMotion });
-  playOverdrive();
-}
-
-/* ---------- act 2's vitals: instead of fading, the heart races ---------- */
-const OVERDRIVE_FLATLINE = 4.2;
-
-// 72 bpm climbing exponentially to 215, one beat at a time
-function overdriveBeats() {
-  const beats = [];
-  for (let t = 0.05; t < OVERDRIVE_FLATLINE - 0.1;) {
-    const bpm = Math.round(72 * (215 / 72) ** Math.min(t / 3.9, 1));
-    beats.push({ t, bpm });
-    t += 60 / bpm;
-  }
-  return beats;
-}
-
-function overdriveSignal(beats) {
-  return t => {
-    let v = 0;
-    // faster beats get narrower, so the peaks bunch up on the trace
-    for (const b of beats) v += heartbeat(t - b.t, Math.min(1, 72 / b.bpm) ** 0.6) * (1 + (b.bpm - 72) / 400);
-    return t < OVERDRIVE_FLATLINE ? v + (Math.random() - 0.5) * 0.03 : v;
-  };
-}
-
-// monitor beeps on the Web Audio clock (the context was unlocked by the gunshot click)
-function beep(freq, dur) {
-  if (!audioCtx || audioCtx.state !== 'running') return;
-  const osc = audioCtx.createOscillator(), gain = audioCtx.createGain(), t = audioCtx.currentTime;
-  osc.type = 'sine';
-  osc.frequency.value = freq;
-  gain.gain.setValueAtTime(0.0001, t);
-  gain.gain.exponentialRampToValueAtTime(0.06, t + 0.008);
-  gain.gain.setValueAtTime(0.06, t + dur * 0.75);
-  gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  osc.connect(gain).connect(audioCtx.destination);
-  osc.start(t);
-  osc.stop(t + dur + 0.02);
-}
-
-function flatTone(freq) {
-  if (!audioCtx || audioCtx.state !== 'running') return () => {};
-  const osc = audioCtx.createOscillator(), gain = audioCtx.createGain(), t = audioCtx.currentTime;
-  osc.type = 'sine';
-  osc.frequency.value = freq;
-  gain.gain.setValueAtTime(0.0001, t);
-  gain.gain.exponentialRampToValueAtTime(0.055, t + 0.02);
-  osc.connect(gain).connect(audioCtx.destination);
-  osc.start(t);
-  return () => {
-    const now = audioCtx.currentTime;
-    gain.gain.setValueAtTime(gain.gain.value, now);
-    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
-    osc.stop(now + 0.06);
-  };
-}
-
-function playOverdrive() {
-  const beats = overdriveBeats();
-  const at = bpm => (beats.find(b => b.bpm >= bpm) || beats.at(-1)).t;
-  const pitch = bpm => 880 + (bpm - 72) * 3.4;
-  act2El.append(vitalsWin);
-  gsap.set(vitalsWin, { opacity: 0, y: 20, scale: 1 });
-  vitalsWin.classList.remove('critical');
-  bpmEl.textContent = '72';
-  vitalStatus.textContent = 'stable';
-  vitalsLog.textContent = '';
-
-  const tl = gsap.timeline();
-  const stopEcg = runEcg(() => tl.time(), overdriveSignal(beats), at(164));
-  let stopTone = () => {};
-  tl.to(vitalsWin, { opacity: 1, y: 0, duration: 0.35, ease: 'power3.out' }, 0)
-    .add(() => typeLog('> impact detected. again.'), 0.1);
-  beats.forEach(b => {
-    tl.add(() => {
-      bpmEl.textContent = b.bpm;
-      vitalStatus.textContent = b.bpm < 100 ? 'elevated' : b.bpm < 160 ? 'tachycardic' : 'critical';
-      if (b.bpm >= 160) vitalsWin.classList.add('critical');
-      beep(pitch(b.bpm), Math.max(0.05, 0.1 - (b.bpm - 72) * 0.00035));
-    }, b.t)
-      // every beat kicks the window, harder as it races
-      .fromTo(vitalsWin, { scale: 1 + (b.bpm - 72) / 2600 }, { scale: 1, duration: 0.16, ease: 'power2.out' }, b.t);
-  });
-  tl.add(() => typeLog('> heart rate climbing'), at(118))
-    .add(() => typeLog('> way, way too fast'), at(164))
-    .add(() => {
-      bpmEl.textContent = '0';
-      vitalStatus.textContent = 'no signal';
-      typeLog('> signal lost');
-      stopTone = flatTone(pitch(215));
-    }, OVERDRIVE_FLATLINE)
-    .to(vitalsWin, { opacity: 0.45, duration: 0.5 }, OVERDRIVE_FLATLINE + 0.15)
-    .add(() => { stopEcg(); endAct2(() => stopTone()); }, OVERDRIVE_FLATLINE + 0.5);
-}
-
-async function endAct2(stopTone) {
-  state = 'act3';
-  // cut to black, let the tone ring a moment, then free the GPU
-  gsap.set(cover, { backgroundColor: '#000', opacity: 1 });
-  await sleep(600);
-  stopTone();
-  gsap.ticker.remove(placeBubble);
-  act3d.dispose();
-  act3d = null;
-  act2El.classList.add('hidden');
-  gsap.set(gun, { visibility: 'hidden' });
-  activeGun?.hide(true);
-  playAct3({ talk: true });
-}
 
 /* ---------- act 3: the deadpan reset (and the roast, for returning skippers) ---------- */
 const stillLock = document.getElementById('still-lock');
@@ -1420,7 +1576,7 @@ function placeStillBubble() {
   });
 }
 
-async function playAct3({ talk }) {
+async function playAct3({ spared = false } = {}) {
   state = 'act3';
   const scene = screens.stillhere;
   const fig = scene.querySelector('.still-fig');
@@ -1435,23 +1591,19 @@ async function playAct3({ talk }) {
   stillBubble.hidden = true;
   gsap.ticker.add(placeStillBubble);
 
-  if (talk) {
-    // snap straight back to the paper, him completely fine
-    gsap.set(cover, { opacity: 0 });
-    gsap.fromTo(fig, { opacity: 0, scale: 0.85, y: 24 }, { opacity: 1, scale: 1, y: 0, duration: 0.45, ease: 'back.out(2.2)' });
-    await sleep(500);
-    const welp = "Welp, that was out of theme. Anyway, here's the Porto.";
-    await typeLine(stillBubble, welp);
-    await sleep(readTime(welp));
-    if (hasVisited && spam >= 4) {
-      for (const line of ROAST) {
-        await typeLine(stillBubble, line);
-        await sleep(readTime(line) + 250);
-      }
+  // he fades back in, completely fine
+  gsap.fromTo(fig, { opacity: 0, y: 30, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 1.2, ease: 'power3.out' });
+  await gsap.to(cover, { opacity: 0, duration: 1.4, ease: 'power2.out' });
+
+  // if you spared him, the line under "still here." says so
+  if (spared) scene.querySelector('.still-sub').textContent = SPARED_SUB;
+  // someone who's been here before and mashed through the cutscenes gets told off first
+  if (!spared && hasVisited && spam >= 4) {
+    await sleep(300);
+    for (const line of ROAST) {
+      await typeLine(stillBubble, line);
+      await sleep(readTime(line) + 250);
     }
-  } else {
-    gsap.fromTo(fig, { opacity: 0, y: 30, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 1.2, ease: 'power3.out' });
-    await gsap.to(cover, { opacity: 0, duration: 1.4, ease: 'power2.out' });
   }
 
   markVisited();
@@ -1510,10 +1662,112 @@ gsap.from('.journey-me', {
 const lean = gsap.quickTo('.journey-me', 'rotation', { duration: 0.8, ease: 'power3' });
 const leanX = gsap.quickTo('.journey-me', 'x', { duration: 0.8, ease: 'power3' });
 gsap.set('.journey-me', { transformOrigin: '70% 100%' });
-document.querySelectorAll('.tl-card').forEach(card => {
+document.querySelectorAll('.m-drag').forEach(card => {
   card.addEventListener('pointerenter', () => { lean(-2.5); leanX(-6); });
   card.addEventListener('pointerleave', () => { lean(0); leanX(0); });
 });
+
+/* ---------- journey: the murder board. red string between the pins, papers you can move ---------- */
+(() => {
+  const items = document.querySelector('.mading-items');
+  const svg = document.querySelector('.m-strings');
+  if (!items || !svg) return;
+  const papers = [...items.querySelectorAll('.m-drag')];
+  const anchors = papers.map(p => p.querySelector('.m-anchor'));
+  const index = Object.fromEntries(papers.map((p, i) => [p.dataset.id, i]));
+  // [from, to] pairs, by paper index, from each paper's data-links
+  const links = papers.flatMap((p, i) => (p.dataset.links || '').split(/\s+/)
+    .filter(id => id in index).map(id => [i, index[id]]));
+
+  const NS = 'http://www.w3.org/2000/svg';
+  const make = (tag, attrs, parent = svg) => {
+    const el = document.createElementNS(NS, tag);
+    Object.entries(attrs).forEach(([k, v]) => el.setAttribute(k, v));
+    return parent.appendChild(el);
+  };
+  // the string's shadow on the cork, then the string
+  const shadows = links.map(() => make('path', { class: 'm-string-shadow' }));
+  const strings = links.map(() => make('path', { class: 'm-string' }));
+
+  // pin to pin (the centre of each paper's pin), with a little sag in the middle
+  function draw() {
+    const box = items.getBoundingClientRect();
+    const pts = anchors.map(a => {
+      const r = a.getBoundingClientRect();
+      return [r.left + r.width / 2 - box.left, r.top + r.height / 2 - box.top];
+    });
+    links.forEach(([a, b], i) => {
+      const [x1, y1] = pts[a], [x2, y2] = pts[b];
+      const sag = Math.hypot(x2 - x1, y2 - y1) * 0.06;
+      const d = `M${x1.toFixed(1)} ${y1.toFixed(1)} Q${((x1 + x2) / 2).toFixed(1)} ${((y1 + y2) / 2 + sag).toFixed(1)} ${x2.toFixed(1)} ${y2.toFixed(1)}`;
+      strings[i].setAttribute('d', d);
+      shadows[i].setAttribute('d', d);
+    });
+  }
+  // redraw every frame while the board is on screen: papers move, pop in, lift on hover
+  let raf = 0;
+  const loop = () => { draw(); raf = requestAnimationFrame(loop); };
+  new IntersectionObserver(([entry]) => {
+    cancelAnimationFrame(raf);
+    if (entry.isIntersecting) loop();
+  }).observe(items);
+
+  // dragging. With a mouse it starts straight away; on a touch screen it takes a short hold,
+  // so a swipe across the board still scrolls the page
+  let top = 20, drag = null;
+  papers.forEach(p => p.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || drag) return;
+    const d = { id: e.pointerId, el: p, x: e.clientX, y: e.clientY, left: p.offsetLeft, top: p.offsetTop, on: false, timer: 0, vx: 0, lastX: e.clientX };
+    const begin = () => {
+      d.on = true;
+      p.classList.add('is-dragging');
+      p.style.zIndex = ++top;
+      try { p.setPointerCapture(d.id); } catch {}
+    };
+    if (e.pointerType === 'touch') d.timer = setTimeout(begin, 230);
+    else { e.preventDefault(); begin(); }
+    drag = d;
+  }));
+  addEventListener('pointermove', e => {
+    const d = drag;
+    if (!d || e.pointerId !== d.id) return;
+    const dx = e.clientX - d.x, dy = e.clientY - d.y;
+    if (!d.on) {
+      if (Math.hypot(dx, dy) > 8) { clearTimeout(d.timer); drag = null; } // that was a scroll
+      return;
+    }
+    const W = items.clientWidth, H = items.clientHeight, w = d.el.offsetWidth, h = d.el.offsetHeight;
+    // it can hang off the edge a little, never off the board
+    const left = Math.min(Math.max(d.left + dx, -w * 0.25), W - w * 0.75);
+    const topPx = Math.min(Math.max(d.top + dy, -h * 0.1), H - h * 0.5);
+    d.el.style.left = `${(left / W) * 100}%`;
+    d.el.style.top = `${(topPx / H) * 100}%`;
+    d.vx = e.clientX - d.lastX;
+    d.lastX = e.clientX;
+  });
+  const drop = e => {
+    const d = drag;
+    if (!d || e.pointerId !== d.id) return;
+    clearTimeout(d.timer);
+    drag = null;
+    if (!d.on) return;
+    d.el.classList.remove('is-dragging');
+    // it swings on its pin when you let go
+    gsap.fromTo(d.el, { rotation: gsap.utils.clamp(-9, 9, d.vx * 0.9) },
+      { rotation: 0, duration: 1, ease: 'elastic.out(1, 0.35)', clearProps: 'transform' });
+  };
+  addEventListener('pointerup', drop);
+  addEventListener('pointercancel', drop);
+  // once a touch drag has started, the finger moves the paper, not the page
+  document.addEventListener('touchmove', e => { if (drag && drag.on) e.preventDefault(); }, { passive: false });
+
+  // the papers get pinned up one after another as the board scrolls in
+  gsap.from(papers, {
+    y: 46, opacity: 0, rotation: i => (i % 2 ? 7 : -7), duration: 0.7, stagger: 0.09, ease: 'back.out(1.7)',
+    clearProps: 'transform,opacity',
+    scrollTrigger: { trigger: '.mading', start: 'top 72%' },
+  });
+})();
 
 /* ---------- toolkit: cards rise into his hand and fan out, merge, then flip to the next deck ---------- */
 (() => {
@@ -1800,7 +2054,7 @@ gbForm.addEventListener('submit', async e => {
 
 /* ---------- chaos mode: the whole site glitches harder ---------- */
 const chaosToggles = document.querySelectorAll('.chaos-toggle');
-const CHAOS_TARGETS = 'h2, .win, .float-win, .tl-card, .project, .logo, .eyebrow, .bubble, #sit, .tk-card, .tk-me, .gb, .now-line, .now-slot, .journey-me, .still-fig, .hero-figure, .hero-title, .sticker, .site-footer, .repo-link';
+const CHAOS_TARGETS = 'h2, .win, .float-win, .m-item, .m-mast, .project, .logo, .eyebrow, .bubble, #sit, .tk-card, .tk-me, .gb, .now-line, .now-slot, .journey-me, .still-fig, .hero-figure, .hero-title, .sticker, .site-footer, .repo-link';
 let chaosTimer = null;
 
 function setChaos(on, loud = false) {
@@ -1845,7 +2099,8 @@ function chaosTick() {
   chaosTimer = setTimeout(chaosTick, gsap.utils.random(220, 900));
 }
 
-chaosToggles.forEach(b => b.addEventListener('click', () => setChaos(!document.documentElement.classList.contains('chaos'), true)));
+// with a gun out, clicking the switch is a shot at it (see shootUI), not a toggle
+chaosToggles.forEach(b => b.addEventListener('click', () => { if (state !== 'aiming') setChaos(!document.documentElement.classList.contains('chaos'), true); }));
 try { if (localStorage.getItem('chaos')) setChaos(true); } catch {}
 
 /* ---------- ?skip=1: the shortcut in the footer, straight to the portfolio ---------- */

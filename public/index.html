@@ -188,19 +188,6 @@
     <p class="go-refused" id="go-refused" aria-live="polite"></p>
   </section>
 
-  <!-- act 2: "ew, this looks so AI." the flat cutout gets swapped for a 3D room (act2-scene.js) -->
-  <section id="act2" class="scene act2 hidden" aria-label="Second chance">
-    <canvas id="scene-3d" class="scene-3d" aria-hidden="true"></canvas>
-    <div class="act2-flat" id="act2-flat">
-      <img class="act2-fig" id="act2-fig" src="assets/stand.png" alt="Sein standing">
-    </div>
-    <div class="act2-grid" id="act2-grid" aria-hidden="true"></div>
-    <div class="act2-scan" id="act2-scan" aria-hidden="true"></div>
-    <div class="bubble act2-bubble" id="act2-bubble" hidden aria-live="polite"><p></p></div>
-    <div class="act2-vignette" id="act2-vignette" aria-hidden="true"></div>
-    <p class="hint act2-hint" id="act2-hint"></p>
-  </section>
-
   <section id="stillhere" class="scene hidden">
     <header class="nav">
       <span class="logo">sein<span class="dim">.portfolio</span></span>
@@ -228,50 +215,87 @@
     <section id="journey" class="panel">
       <p class="eyebrow">01 — journey</p>
       <h2>My journey</h2>
-      <div class="journey-stage">
-      <div class="journey-me" aria-hidden="true"><img src="assets/journey-sit.png" alt=""></div>
-      <ol class="timeline">
-        <li class="tl-item">
-          <span class="tl-age">7</span>
-          <div class="win tl-card">
-            <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-title">grade-7.png</span></div>
-            <div class="tl-photo"><span>photo coming soon</span></div>
-            <p class="tl-text">insecure on how i speak i am cadel BTW. but tbh grade 7 is when i was most cadel at because i cant speak 5 letters</p>
-          </div>
-        </li>
-        <li class="tl-item">
-          <span class="tl-age">8</span>
-          <div class="win tl-card">
-            <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-title">grade-8.png</span></div>
-            <div class="tl-photo"><span>photo coming soon</span></div>
-            <p class="tl-text">I actually have no memories of this era but i do remeber i did do a lot of competition here</p>
-          </div>
-        </li>
-        <li class="tl-item">
-          <span class="tl-age">9</span>
-          <div class="win tl-card">
-            <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-title">grade-9.png</span></div>
-            <div class="tl-photo"><span>photo coming soon</span></div>
-            <p class="tl-text">didn't expect best graduate but ey free money</p>
-          </div>
-        </li>
-        <li class="tl-item">
-          <span class="tl-age">10</span>
-          <div class="win tl-card">
-            <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-title">grade-10.png</span></div>
-            <div class="tl-photo"><span>photo coming soon</span></div>
-            <p class="tl-text">YOOOOO, i got acceppted at TSA and... my grade dropped tho</p>
-          </div>
-        </li>
-        <li class="tl-item">
-          <span class="tl-age">11</span>
-          <div class="win tl-card">
-            <div class="win-bar"><span class="dots"><i></i><i></i><i></i></span><span class="win-title">grade-11.png</span></div>
-            <div class="tl-photo"><span>photo coming soon</span></div>
-            <p class="tl-text">TBH, sort of having regret by getting choosen at TSA but ehh it happend</p>
-          </div>
-        </li>
-      </ol>
+      <!-- the Mading, as a murder board: papers pinned to cork, red string between the pins.
+           Drag the papers around (press and hold on a phone); the strings follow.
+           To add a photo, put an <img> inside that paper's .m-photo (replacing the <span>).
+           Who's connected to whom is the data-links on each paper (ids of other papers). -->
+      <div class="mading">
+        <div class="mading-board">
+          <!-- the red string, drawn by script.js behind the papers; each pin is its paper's .m-anchor -->
+          <svg class="m-strings" aria-hidden="true"></svg>
+          <ol class="mading-items" aria-label="My journey, grade 7 to 11">
+            <li class="m-drag m-mast" data-id="mast" data-links="g7 g9 q">
+              <i class="m-anchor" style="--pin:#ff6b4a" aria-hidden="true"></i>
+              <span class="m-mast-kicker">★ edisi kelas 7 – 11 ★</span>
+              <span class="m-mast-title">MADING</span>
+              <span class="m-mast-sub">sein's wall magazine. the case so far.</span>
+            </li>
+
+            <!-- grade 7: a page torn out of a notebook -->
+            <li class="m-drag m-item m-notebook" data-id="g7" data-links="g8 ev">
+              <i class="m-anchor" style="--pin:#e23b2e" aria-hidden="true"></i>
+              <p class="m-grade">grade 7</p>
+              <h3 class="m-title">the cadel era</h3>
+              <p class="m-text">insecure on how i speak i am cadel BTW. but tbh grade 7 is when i was most cadel at because i cant speak 5 letters</p>
+              <div class="m-photo m-snap"><span>photo soon</span></div>
+            </li>
+
+            <!-- grade 8: a competition ticket stub -->
+            <li class="m-drag m-item m-ticket" data-id="g8" data-links="g9 q">
+              <i class="m-anchor" style="--pin:#2bb3a3" aria-hidden="true"></i>
+              <div class="m-ticket-main">
+                <p class="m-ticket-kicker">LOMBA · COMPETITION · ADMIT ONE</p>
+                <p class="m-grade">grade 8</p>
+                <p class="m-text">I actually have no memories of this era but i do remember i did do a lot of competition here</p>
+              </div>
+              <div class="m-ticket-stub" aria-hidden="true"><span>No. 0008</span></div>
+            </li>
+
+            <!-- grade 9: a polaroid, with a gold star for best graduate -->
+            <li class="m-drag m-item m-polaroid" data-id="g9" data-links="g10 g11">
+              <i class="m-anchor" style="--pin:#facc15" aria-hidden="true"></i>
+              <div class="m-photo"><span>photo soon</span></div>
+              <p class="m-grade">grade 9</p>
+              <p class="m-caption">best graduate 24/25</p>
+              <p class="m-text">didn't expect best graduate but ey free money</p>
+              <i class="m-star" aria-hidden="true">★</i>
+            </li>
+
+            <!-- a clue card -->
+            <li class="m-drag m-item m-card m-q" data-id="q" data-links="g10">
+              <i class="m-anchor" style="--pin:#e23b2e" aria-hidden="true"></i>
+              <p class="m-card-text">how does a cadel kid end up on the <b>TSA</b> committee <span class="m-circled">??</span></p>
+            </li>
+
+            <!-- grade 10: the TSA committee badge -->
+            <li class="m-drag m-item m-badge" data-id="g10" data-links="g11">
+              <i class="m-anchor" style="--pin:#2bb3a3" aria-hidden="true"></i>
+              <div class="m-badge-head"><span>PANITIA</span><b>TSA</b></div>
+              <div class="m-badge-body">
+                <div class="m-photo"><span>photo soon</span></div>
+                <div>
+                  <p class="m-grade">grade 10</p>
+                  <p class="m-text">YOOOOO, i got accepted at TSA and... my grade dropped tho</p>
+                </div>
+              </div>
+            </li>
+
+            <!-- grade 11: a sticky note -->
+            <li class="m-drag m-item m-sticky" data-id="g11" data-links="ev">
+              <i class="m-anchor" style="--pin:#9b8cff" aria-hidden="true"></i>
+              <p class="m-grade">grade 11</p>
+              <p class="m-text">TBH, sort of having regret by getting chosen at TSA but ehh it happened</p>
+            </li>
+
+            <!-- another clue: an evidence tag -->
+            <li class="m-drag m-item m-card m-evidence" data-id="ev">
+              <i class="m-anchor" style="--pin:#ff6b4a" aria-hidden="true"></i>
+              <p class="m-evidence-tag">EVIDENCE #1</p>
+              <p class="m-card-text">subject is <em>still here.</em></p>
+            </li>
+          </ol>
+        </div>
+        <div class="journey-me" aria-hidden="true"><img src="assets/journey-sit.png" alt=""></div>
       </div>
     </section>
 
