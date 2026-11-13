@@ -20,8 +20,19 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
 const touchOnly = matchMedia('(hover: none)').matches;
 const pick = arr => arr[Math.floor(Math.random() * arr.length)];
 
-// 'hero' -> 'glitching' -> 'chat' -> 'confirm' -> 'aiming' -> 'shot'
+// 'hero' -> 'glitching' -> 'chat' -> 'confirm' -> 'aiming' -> 'shot' (act 1)
+// -> 'act2' -> 'act2-armed' -> 'act2-shot' -> 'act3' -> 'enter' -> 'done'
 let state = 'hero';
+
+/* ---------- repeat visitors ---------- */
+// someone who's been here before and mashes through the cutscenes gets roasted in act 3
+const hasVisited = (() => { try { return localStorage.getItem('sein_visited') === 'true'; } catch { return false; } })();
+function markVisited() { try { localStorage.setItem('sein_visited', 'true'); } catch {} }
+const SPAM_STATES = new Set(['shot', 'act2', 'act2-shot']);
+let spam = 0;
+const countSpam = () => { if (SPAM_STATES.has(state)) spam++; };
+addEventListener('pointerdown', countSpam, true);
+addEventListener('keydown', countSpam, true);
 
 /* ---------- scroll lock ---------- */
 history.scrollRestoration = 'manual';
@@ -371,6 +382,7 @@ chatForm.addEventListener('submit', async e => {
 setBusy(true);
 async function startChat() {
   state = 'chat';
+  getSketchGun(); // the gun loads while they chat
   ignoreScrollUntil = performance.now() + 1500; // trackpad momentum from the glitch scroll
   await sleep(700);
   await say(OPENING_LINE);
@@ -552,6 +564,7 @@ const bossIsOpen = () => document.documentElement.classList.contains('boss-open'
 
 function scrollAttempt() {
   if (bossIsOpen()) return;
+  if (state === 'enter') return enterPortfolio();
   // holding up the ID card: scrolling just puts it back first
   if (state === 'hero' && window.heroBadge?.isOpen()) {
     window.heroBadge.close();
@@ -617,8 +630,86 @@ function gunPose(cx, cy) {
   };
 }
 
+/* ---------- the paper-sketch gun (sketch-gun.js) ----------
+   One weapon per visit, picked at random and kept for both shots: a pistol, an SMG or a sniper.
+   If WebGL or the module isn't there, the gun.png above is used instead. */
+const WEAPONS = ['pistol', 'smg', 'sniper'];
+// ?gun=sniper forces one, for checking each of them; otherwise it's luck
+const WEAPON = WEAPONS.includes(new URLSearchParams(location.search).get('gun'))
+  ? new URLSearchParams(location.search).get('gun')
+  : pick(WEAPONS);
+let sketchGunLoad = null;
+let activeGun = null; // the sketch gun, once it's actually in his hands
+
+function getSketchGun() {
+  sketchGunLoad ??= import('./sketch-gun.js')
+    .then(m => m.createSketchGun({ weapon: WEAPON }))
+    .catch(err => { console.warn('[gun]', err); return null; });
+  return sketchGunLoad;
+}
+
 function aim(e) {
+  if (activeGun) return activeGun.aimAt(e.clientX, e.clientY);
   gsap.to(gun, { ...gunPose(e.clientX, e.clientY), duration: 0.25, ease: 'power3', overwrite: 'auto' });
+}
+
+// the bang: deeper for the sniper, three of them for the SMG's burst
+async function gunshotSound() {
+  const bang = sound(GUNSHOT_AUDIO);
+  bang.preservesPitch = false;
+  bang.playbackRate = activeGun?.weapon === 'sniper' ? 0.72 : 1;
+  bang.currentTime = 0;
+  await Promise.race([bang.play().catch(() => {}), sleep(300)]);
+  for (let i = 1; i < (activeGun?.rounds || 1); i++) {
+    setTimeout(() => bang.cloneNode().play().catch(() => {}), i * activeGun.interval * 1000);
+  }
+  await sleep(GUNSHOT_PEAK * 1000);
+}
+
+/* ---------- aiming down the sight: hold right-click, or the aim button on a phone ---------- */
+const ARMED = new Set(['aiming', 'act2-armed']);
+const adsBtn = document.createElement('button');
+adsBtn.type = 'button';
+adsBtn.className = 'ads-toggle';
+adsBtn.textContent = '◎ aim';
+adsBtn.hidden = true;
+document.body.append(adsBtn);
+
+function armedHint() {
+  if (touchOnly) return 'tap to shoot';
+  return activeGun ? 'click to shoot · hold right-click to aim' : 'click to shoot';
+}
+function showAimButton(on) {
+  adsBtn.hidden = !(on && touchOnly && activeGun);
+  adsBtn.classList.remove('on');
+}
+adsBtn.addEventListener('click', e => {
+  e.stopPropagation(); // aiming isn't a shot
+  const on = !adsBtn.classList.contains('on');
+  adsBtn.classList.toggle('on', on);
+  activeGun?.setAim(on);
+});
+addEventListener('pointerdown', e => {
+  if (e.button === 2 && activeGun && ARMED.has(state)) activeGun.setAim(true, e.clientX, e.clientY);
+});
+addEventListener('pointerup', e => { if (e.button === 2) activeGun?.setAim(false); });
+addEventListener('contextmenu', e => {
+  if (activeGun && (ARMED.has(state) || state === 'shot' || state === 'act2-shot')) e.preventDefault();
+});
+
+// bullet holes where they clicked: a tight spread for a burst, a bigger one for the sniper
+function makeHoles(x, y) {
+  const n = activeGun?.rounds || 1;
+  return Array.from({ length: n }, (_, i) => {
+    const hole = document.createElement('div');
+    hole.className = 'hole';
+    hole.style.left = x + (i ? gsap.utils.random(-28, 28) : 0) + 'px';
+    hole.style.top = y + (i ? gsap.utils.random(-34, 10) : 0) + 'px';
+    if (activeGun?.weapon === 'sniper') hole.style.scale = '1.4';
+    holes.appendChild(hole);
+    gsap.fromTo(hole, { scale: 0.3, opacity: 0 }, { scale: 1, opacity: 1, duration: 0.15, delay: i * (activeGun?.interval || 0) });
+    return hole;
+  });
 }
 
 function swapFigure(src) {
@@ -632,7 +723,7 @@ const shotImg = new Image();
 let shotImgReady = false;
 shotImg.onload = () => { shotImgReady = true; };
 
-function startAiming() {
+async function startAiming() {
   state = 'aiming';
   setBusy(true);
   screens.intro.classList.add('aiming');
@@ -642,8 +733,22 @@ function startAiming() {
   swapFigure(AIMED_AT_IMAGE);
   if (SHOT_IMAGE) shotImg.src = SHOT_IMAGE;
 
+  // the page is locked, but a focus or a tap can still nudge it: put it back before aiming
+  document.body.scrollTop = 0;
+  document.documentElement.scrollTop = 0;
   const r = sit.getBoundingClientRect();
-  const start = gunPose(r.left + r.width / 2, r.top + r.height * 0.45);
+  const cx = r.left + r.width / 2, cy = r.top + r.height * 0.45;
+  activeGun = await Promise.race([getSketchGun(), sleep(1500).then(() => null)]);
+  hint.textContent = armedHint();
+  if (activeGun) {
+    await activeGun.show(cx, cy);
+    showAimButton(true);
+    addEventListener('pointermove', aim);
+    addEventListener('click', shoot, { once: true });
+    return;
+  }
+
+  const start = gunPose(cx, cy);
   gsap.fromTo(gun,
     { ...start, y: innerHeight + 40, visibility: 'visible' },
     {
@@ -662,29 +767,25 @@ async function shoot(e) {
   state = 'shot';
   removeEventListener('pointermove', aim);
   hint.textContent = '';
+  showAimButton(false);
   prepareGameOverAudio();
-  const bang = sound(GUNSHOT_AUDIO);
-  bang.currentTime = 0;
-  await Promise.race([bang.play().catch(() => {}), sleep(300)]);
-  await sleep(GUNSHOT_PEAK * 1000);
+  loadAct2(); // the 3D scene downloads while he's dying
+  await gunshotSound();
 
-  const pose = gunPose(e.clientX, e.clientY);
-  gsap.killTweensOf(gun);
-  gsap.set(gun, pose);
-
-  const hole = document.createElement('div');
-  hole.className = 'hole';
-  hole.style.left = e.clientX + 'px';
-  hole.style.top = e.clientY + 'px';
-  holes.appendChild(hole);
-
+  makeHoles(e.clientX, e.clientY);
   const tl = gsap.timeline()
     .set(flash, { opacity: 0.9 })
     .to(flash, { opacity: 0, duration: 0.35 })
-    .to(gun, { y: pose.y + 30, rotation: pose.rotation - 7, duration: 0.06, ease: 'power4.out' }, 0)
-    .to(gun, { y: pose.y, rotation: pose.rotation, duration: 0.4, ease: 'power2.out' }, 0.06)
-    .fromTo(screens.intro, { x: -8 }, { x: 0, duration: 0.4, ease: 'elastic.out(1, 0.3)' }, 0)
-    .fromTo(hole, { scale: 0.3 }, { scale: 1, duration: 0.15 }, 0);
+    .fromTo(screens.intro, { x: -8 }, { x: 0, duration: 0.4, ease: 'elastic.out(1, 0.3)' }, 0);
+  if (activeGun) {
+    activeGun.fire(e.clientX, e.clientY);
+  } else {
+    const pose = gunPose(e.clientX, e.clientY);
+    gsap.killTweensOf(gun);
+    gsap.set(gun, pose);
+    tl.to(gun, { y: pose.y + 30, rotation: pose.rotation - 7, duration: 0.06, ease: 'power4.out' }, 0)
+      .to(gun, { y: pose.y, rotation: pose.rotation, duration: 0.4, ease: 'power2.out' }, 0.06);
+  }
 
   if (shotImgReady) {
     tl.add(() => swapFigure(SHOT_IMAGE), 0.1);
@@ -696,6 +797,7 @@ async function shoot(e) {
   tl.add(() => {
     gsap.set(cover, { backgroundColor: '#000', opacity: 1 });
     screens.intro.classList.add('hidden');
+    activeGun?.hide(true);
   }, 1.0)
     .add(playTragic, 1.9);
 }
@@ -727,20 +829,23 @@ const FLATLINE_AT = 8.04;
 // the flat tone in the heartbeat file stops here: hard cut to black
 const TONE_END = 11.1;
 
+// one heartbeat (P, Q, R, S, T), d seconds from its peak; k < 1 squeezes it for fast heart rates
+function heartbeat(d, k = 1) {
+  const g = (mu, sigma, amp) => amp * Math.exp(-((d - mu) ** 2) / (2 * sigma ** 2));
+  return g(-0.16 * k, 0.03 * k, 0.12) + g(-0.03 * k, 0.008, -0.15) + g(0, 0.012, 1) + g(0.03 * k, 0.01, -0.3) + g(0.24 * k, 0.05 * k, 0.2);
+}
+
 function ecgSignal(t) {
   let v = 0;
-  for (const b of BEATS) {
-    const d = t - b.t;
-    const g = (mu, sigma, amp) => amp * Math.exp(-((d - mu) ** 2) / (2 * sigma ** 2));
-    v += g(-0.16, 0.03, 0.12) + g(-0.03, 0.008, -0.15) + g(0, 0.012, 1) + g(0.03, 0.01, -0.3) + g(0.24, 0.05, 0.2);
-  }
+  for (const b of BEATS) v += heartbeat(t - b.t);
   return t < FLATLINE_AT ? v + (Math.random() - 0.5) * 0.02 : v;
 }
 
-// hospital-monitor sweep: draws left to right, wraps, erasing just ahead of the pen
-function runEcg(clock) {
+// hospital-monitor sweep: draws left to right, wraps, erasing just ahead of the pen.
+// signal(t) is the trace; from redFrom seconds on it's drawn in red.
+function runEcg(clock, signal = ecgSignal, redFrom = BEATS.at(-2).t) {
   const W = ecg.width, H = ecg.height, SPEED = 190, STEP = 2 / SPEED, mid = H * 0.62;
-  const yAt = t => mid - ecgSignal(t) * H * 0.5;
+  const yAt = t => mid - signal(t) * H * 0.5;
   let drawnT = 0, stopped = false;
   ecgCtx.clearRect(0, 0, W, H);
   ecgCtx.lineWidth = 2;
@@ -749,7 +854,7 @@ function runEcg(clock) {
   requestAnimationFrame(function frame(now) {
     if (stopped) return;
     const t = clock();
-    ecgCtx.strokeStyle = t >= BEATS.at(-2).t ? '#ff5f57' : '#111';
+    ecgCtx.strokeStyle = t >= redFrom ? '#ff5f57' : '#111';
     ecgCtx.beginPath();
     ecgCtx.moveTo((drawnT * SPEED) % W, yAt(drawnT));
     for (let tt = drawnT + STEP; tt <= t; tt += STEP) {
@@ -833,7 +938,7 @@ function playTragic() {
           .to(cover, { opacity: 1, duration: 0.6, ease: 'power2.in' })
           .add(() => {
             gameover.classList.add('hidden');
-            playStillHere();
+            playAct2();
           });
       });
     }, TONE_END);
@@ -1017,31 +1122,363 @@ function playFuse(px, done) {
   playSyncedBuffer(tl, reversedShatter);
 }
 
-/* ---------- still here ---------- */
-function playStillHere() {
-  const scene = screens.stillhere;
-  const fig = scene.querySelector('.still-fig');
-  const pulse = scene.querySelector('.still-pulse path');
-  const len = pulse.getTotalLength();
-  scene.classList.remove('hidden');
-  gsap.set(scene, { opacity: 1 });
+/* ---------- act 2: "ew, this looks so AI. hold on, let me fix that." ---------- */
+const act2El = document.getElementById('act2');
+const act2Canvas = document.getElementById('scene-3d');
+const act2Flat = document.getElementById('act2-flat');
+const act2Fig = document.getElementById('act2-fig');
+const act2Grid = document.getElementById('act2-grid');
+const act2Scan = document.getElementById('act2-scan');
+const act2Bubble = document.getElementById('act2-bubble');
+const act2Vignette = document.getElementById('act2-vignette');
+const act2Hint = document.getElementById('act2-hint');
+const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
+let act2Module = null; // the three.js scene, fetched from the first gunshot on
+let act3d = null;
+let bubbleAnchor = null; // () => ({ x, y }): where the act 2 bubble's tail points
 
-  gsap.timeline()
-    .set(scene.querySelectorAll('.still-title, .still-sub, #btn-enter'), { opacity: 0, y: 12 })
-    .set(pulse, { strokeDasharray: len, strokeDashoffset: len })
-    .fromTo(fig, { opacity: 0, y: 30, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 1.2, ease: 'power3.out' }, 0)
-    .to(cover, { opacity: 0, duration: 1.6, ease: 'power2.out' }, 0)
-    .to(pulse, { strokeDashoffset: 0, duration: 1.4, ease: 'power1.inOut' }, 0.9)
-    .to(scene.querySelectorAll('.still-title, .still-sub, #btn-enter'), { opacity: 1, y: 0, stagger: 0.18, duration: 0.6, ease: 'power3.out' }, 1.6);
+function loadAct2() {
+  act2Module ??= import('./act2-scene.js').catch(err => { console.warn('[act2]', err); return null; });
+  return act2Module;
 }
 
-document.getElementById('btn-enter').addEventListener('click', () => {
+// a speech bubble outside the chat: types the line, nothing goes in the chat log
+async function typeLine(bub, text) {
+  const p = bub.querySelector('p');
+  if (bub.hidden) {
+    bub.hidden = false;
+    gsap.fromTo(bub, { opacity: 0, scale: 0.94 }, { opacity: 1, scale: 1, duration: 0.25, ease: 'back.out(2)' });
+  }
+  p.textContent = '';
+  for (const ch of text) {
+    p.textContent += ch;
+    await sleep(/[.?!,]/.test(ch) ? 130 : 24);
+  }
+}
+
+// how long a finished line stays up before the next thing happens: longer lines get longer
+const readTime = text => 450 + text.length * 14;
+
+function hideBubble(bub) {
+  return gsap.to(bub, { opacity: 0, duration: 0.2, onComplete: () => { bub.hidden = true; } });
+}
+
+// keeps the act 2 bubble over his head, inside the screen
+function placeBubble() {
+  if (!bubbleAnchor || act2Bubble.hidden) return;
+  const { x, y } = bubbleAnchor();
+  const half = act2Bubble.offsetWidth / 2;
+  gsap.set(act2Bubble, { left: Math.min(Math.max(x, half + 12), innerWidth - half - 12), top: Math.max(y - 14, act2Bubble.offsetHeight + 12) });
+}
+
+async function playAct2() {
+  // no WebGL, or the scene didn't load: skip straight to the ending, without the joke
+  const mod = await Promise.race([loadAct2(), sleep(4000).then(() => null)]);
+  if (mod) {
+    try { act3d = mod.createAct2(act2Canvas); } catch (err) { console.warn('[act2]', err); }
+  }
+  if (!act3d) return playAct3({ talk: false });
+
+  state = 'act2';
+  act2El.classList.remove('hidden');
+  gsap.set(act2El, { opacity: 1 });
+  gsap.set(act2Flat, { clipPath: 'inset(0% 0% 0% 0%)' });
+  gsap.set([act2Grid, act2Scan, act2Vignette], { opacity: 0 });
+  gsap.set(act2Bubble, { xPercent: -50, yPercent: -100 });
+  act2Bubble.hidden = true;
+  act3d.wireframe(true);
+  bubbleAnchor = () => {
+    const r = act2Fig.getBoundingClientRect();
+    return { x: r.left + r.width * 0.55, y: r.top + r.height * 0.03 };
+  };
+  gsap.ticker.add(placeBubble);
+
+  // beat 1: the critique
+  await gsap.to(cover, { opacity: 0, duration: 0.4 });
+  await sleep(200);
+  await typeLine(act2Bubble, '...');
+  await sleep(600);
+  const critique = 'Ew, this looks so AI. Hold on, let me fix that.';
+  await typeLine(act2Bubble, critique);
+  await sleep(readTime(critique) - 300);
+
+  // beat 2: the render pass. a scanline wipes the flat cutout away and the room is
+  // drawn in wireframe underneath, then filled in
+  await hideBubble(act2Bubble);
+  const wipe = reducedMotion ? 0.3 : 0.9;
+  act3d.settle(reducedMotion ? 0.01 : wipe + 1.0);
+  await gsap.timeline()
+    .to(act2Grid, { opacity: 1, duration: 0.15 })
+    .set(act2Scan, { opacity: 1, top: '0%' })
+    .to(act2Scan, { top: '100%', duration: wipe, ease: 'power1.inOut' })
+    .to(act2Flat, { clipPath: 'inset(100% 0% 0% 0%)', duration: wipe, ease: 'power1.inOut' }, '<')
+    .to(act2Grid, { opacity: 0, duration: 0.35 })
+    .set(act2Scan, { opacity: 0 });
+  await sleep(200);
+  act3d.wireframe(false);
+  gsap.fromTo(act2Canvas, { filter: 'brightness(1.5)' }, { filter: 'brightness(1)', duration: 0.6, ease: 'power2.out' });
+  await sleep(reducedMotion ? 200 : 750);
+
+  // beat 3: the dare
+  bubbleAnchor = () => act3d.headPoint();
+  await typeLine(act2Bubble, 'Go back. Shoot me again, I dare you.');
+  await sleep(450);
+  armAct2();
+}
+
+function armAct2() {
+  state = 'act2-armed';
+  act2El.append(flash);
+  act2El.classList.add('aiming');
+  act2Hint.textContent = armedHint();
+  const c = act3d.chestPoint();
+  // the same weapon as the first time: it was picked once and stays picked
+  if (activeGun) {
+    activeGun.show(c.x, c.y).then(() => {
+      showAimButton(true);
+      addEventListener('pointermove', aim);
+      addEventListener('click', shootAgain, { once: true });
+    });
+    return;
+  }
+  act2El.append(gun);
+  const start = gunPose(c.x, c.y);
+  gsap.killTweensOf(gun);
+  gsap.fromTo(gun,
+    { ...start, y: innerHeight + 40, visibility: 'visible' },
+    {
+      ...start, duration: 0.8, ease: 'power3.out',
+      onComplete: () => {
+        addEventListener('pointermove', aim);
+        addEventListener('click', shootAgain, { once: true });
+      },
+    });
+}
+
+async function shootAgain(e) {
+  state = 'act2-shot';
+  removeEventListener('pointermove', aim);
+  act2Hint.textContent = '';
+  showAimButton(false);
+  act2El.classList.remove('aiming');
+  getAudioCtx().resume().catch(() => {});
+  await gunshotSound();
+  hideBubble(act2Bubble);
+  bubbleAnchor = null;
+
+  const tl = gsap.timeline()
+    .set(flash, { opacity: 0.9 })
+    .to(flash, { opacity: 0, duration: 0.35 })
+    // a crimson edge that pulses in and drains away
+    .fromTo(act2Vignette, { opacity: 1 }, { opacity: 0.4, duration: 0.9, ease: 'power2.out' }, 0)
+    .to(act2Vignette, { opacity: 0, duration: 1.4 }, 1.8);
+  if (activeGun) {
+    activeGun.fire(e.clientX, e.clientY);
+    tl.add(() => activeGun.hide(), 1.3);
+  } else {
+    const pose = gunPose(e.clientX, e.clientY);
+    gsap.killTweensOf(gun);
+    gsap.set(gun, pose);
+    tl.to(gun, { y: pose.y + 30, rotation: pose.rotation - 7, duration: 0.06, ease: 'power4.out' }, 0)
+      .to(gun, { y: pose.y, rotation: pose.rotation, duration: 0.4, ease: 'power2.out' }, 0.06)
+      .to(gun, { y: innerHeight + 80, duration: 0.7, ease: 'power3.in' }, 1.2);
+  }
+
+  act3d.shoot({ reduced: reducedMotion });
+  playOverdrive();
+}
+
+/* ---------- act 2's vitals: instead of fading, the heart races ---------- */
+const OVERDRIVE_FLATLINE = 4.2;
+
+// 72 bpm climbing exponentially to 215, one beat at a time
+function overdriveBeats() {
+  const beats = [];
+  for (let t = 0.05; t < OVERDRIVE_FLATLINE - 0.1;) {
+    const bpm = Math.round(72 * (215 / 72) ** Math.min(t / 3.9, 1));
+    beats.push({ t, bpm });
+    t += 60 / bpm;
+  }
+  return beats;
+}
+
+function overdriveSignal(beats) {
+  return t => {
+    let v = 0;
+    // faster beats get narrower, so the peaks bunch up on the trace
+    for (const b of beats) v += heartbeat(t - b.t, Math.min(1, 72 / b.bpm) ** 0.6) * (1 + (b.bpm - 72) / 400);
+    return t < OVERDRIVE_FLATLINE ? v + (Math.random() - 0.5) * 0.03 : v;
+  };
+}
+
+// monitor beeps on the Web Audio clock (the context was unlocked by the gunshot click)
+function beep(freq, dur) {
+  if (!audioCtx || audioCtx.state !== 'running') return;
+  const osc = audioCtx.createOscillator(), gain = audioCtx.createGain(), t = audioCtx.currentTime;
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(0.06, t + 0.008);
+  gain.gain.setValueAtTime(0.06, t + dur * 0.75);
+  gain.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(t);
+  osc.stop(t + dur + 0.02);
+}
+
+function flatTone(freq) {
+  if (!audioCtx || audioCtx.state !== 'running') return () => {};
+  const osc = audioCtx.createOscillator(), gain = audioCtx.createGain(), t = audioCtx.currentTime;
+  osc.type = 'sine';
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0.0001, t);
+  gain.gain.exponentialRampToValueAtTime(0.055, t + 0.02);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(t);
+  return () => {
+    const now = audioCtx.currentTime;
+    gain.gain.setValueAtTime(gain.gain.value, now);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.05);
+    osc.stop(now + 0.06);
+  };
+}
+
+function playOverdrive() {
+  const beats = overdriveBeats();
+  const at = bpm => (beats.find(b => b.bpm >= bpm) || beats.at(-1)).t;
+  const pitch = bpm => 880 + (bpm - 72) * 3.4;
+  act2El.append(vitalsWin);
+  gsap.set(vitalsWin, { opacity: 0, y: 20, scale: 1 });
+  vitalsWin.classList.remove('critical');
+  bpmEl.textContent = '72';
+  vitalStatus.textContent = 'stable';
+  vitalsLog.textContent = '';
+
+  const tl = gsap.timeline();
+  const stopEcg = runEcg(() => tl.time(), overdriveSignal(beats), at(164));
+  let stopTone = () => {};
+  tl.to(vitalsWin, { opacity: 1, y: 0, duration: 0.35, ease: 'power3.out' }, 0)
+    .add(() => typeLog('> impact detected. again.'), 0.1);
+  beats.forEach(b => {
+    tl.add(() => {
+      bpmEl.textContent = b.bpm;
+      vitalStatus.textContent = b.bpm < 100 ? 'elevated' : b.bpm < 160 ? 'tachycardic' : 'critical';
+      if (b.bpm >= 160) vitalsWin.classList.add('critical');
+      beep(pitch(b.bpm), Math.max(0.05, 0.1 - (b.bpm - 72) * 0.00035));
+    }, b.t)
+      // every beat kicks the window, harder as it races
+      .fromTo(vitalsWin, { scale: 1 + (b.bpm - 72) / 2600 }, { scale: 1, duration: 0.16, ease: 'power2.out' }, b.t);
+  });
+  tl.add(() => typeLog('> heart rate climbing'), at(118))
+    .add(() => typeLog('> way, way too fast'), at(164))
+    .add(() => {
+      bpmEl.textContent = '0';
+      vitalStatus.textContent = 'no signal';
+      typeLog('> signal lost');
+      stopTone = flatTone(pitch(215));
+    }, OVERDRIVE_FLATLINE)
+    .to(vitalsWin, { opacity: 0.45, duration: 0.5 }, OVERDRIVE_FLATLINE + 0.15)
+    .add(() => { stopEcg(); endAct2(() => stopTone()); }, OVERDRIVE_FLATLINE + 0.5);
+}
+
+async function endAct2(stopTone) {
+  state = 'act3';
+  // cut to black, let the tone ring a moment, then free the GPU
+  gsap.set(cover, { backgroundColor: '#000', opacity: 1 });
+  await sleep(600);
+  stopTone();
+  gsap.ticker.remove(placeBubble);
+  act3d.dispose();
+  act3d = null;
+  act2El.classList.add('hidden');
+  gsap.set(gun, { visibility: 'hidden' });
+  activeGun?.hide(true);
+  playAct3({ talk: true });
+}
+
+/* ---------- act 3: the deadpan reset (and the roast, for returning skippers) ---------- */
+const stillLock = document.getElementById('still-lock');
+const stillBubble = document.getElementById('still-bubble');
+const ROAST = [
+  'huh you wanted to skip this intro????',
+  'Are you a new visitor looking at the device? no 🙂‍↔️',
+  'Hey I specifically put a shortcut to skip the intro at the end of my Porto......',
+  "You didn't read that did you",
+];
+
+// above his head if there's room under the nav, otherwise beside it
+function placeStillBubble() {
+  if (stillBubble.hidden) return;
+  const r = screens.stillhere.querySelector('.still-fig').getBoundingClientRect();
+  const bw = stillBubble.offsetWidth, bh = stillBubble.offsetHeight, top = r.top + r.height * 0.02;
+  const above = top - bh - 14 >= 64;
+  stillBubble.classList.toggle('side', !above);
+  const x = above ? r.left + r.width * 0.55 - bw * 0.3 : r.left + r.width * 0.78;
+  gsap.set(stillBubble, {
+    left: Math.min(Math.max(x, 12), innerWidth - bw - 12),
+    top: above ? top - bh - 14 : Math.max(64, r.top + r.height * 0.04),
+  });
+}
+
+async function playAct3({ talk }) {
+  state = 'act3';
+  const scene = screens.stillhere;
+  const fig = scene.querySelector('.still-fig');
+  const pulseSvg = scene.querySelector('.still-pulse');
+  const pulse = pulseSvg.querySelector('path');
+  const len = pulse.getTotalLength();
+  const rest = scene.querySelectorAll('.still-title, .still-sub, #btn-enter');
+  scene.classList.remove('hidden');
+  gsap.set(scene, { opacity: 1 });
+  gsap.set([pulseSvg, ...rest], { opacity: 0, y: 12 });
+  gsap.set(pulse, { strokeDasharray: len, strokeDashoffset: len });
+  stillBubble.hidden = true;
+  gsap.ticker.add(placeStillBubble);
+
+  if (talk) {
+    // snap straight back to the paper, him completely fine
+    gsap.set(cover, { opacity: 0 });
+    gsap.fromTo(fig, { opacity: 0, scale: 0.85, y: 24 }, { opacity: 1, scale: 1, y: 0, duration: 0.45, ease: 'back.out(2.2)' });
+    await sleep(500);
+    const welp = "Welp, that was out of theme. Anyway, here's the Porto.";
+    await typeLine(stillBubble, welp);
+    await sleep(readTime(welp));
+    if (hasVisited && spam >= 4) {
+      for (const line of ROAST) {
+        await typeLine(stillBubble, line);
+        await sleep(readTime(line) + 250);
+      }
+    }
+  } else {
+    gsap.fromTo(fig, { opacity: 0, y: 30, scale: 0.96 }, { opacity: 1, y: 0, scale: 1, duration: 1.2, ease: 'power3.out' });
+    await gsap.to(cover, { opacity: 0, duration: 1.4, ease: 'power2.out' });
+  }
+
+  markVisited();
+  stillLock.classList.add('unlocked');
+  stillLock.innerHTML = '<i class="pulse"></i>scroll unlocked';
+  state = 'enter';
+  gsap.timeline()
+    .to(pulseSvg, { opacity: 1, y: 0, duration: 0.4 })
+    .to(pulse, { strokeDashoffset: 0, duration: 1.2, ease: 'power1.inOut' }, 0)
+    .to(rest, { opacity: 1, y: 0, stagger: 0.15, duration: 0.5, ease: 'power3.out' }, 0.3);
+}
+
+// "come in", or just scrolling once it's unlocked
+function enterPortfolio() {
+  if (state !== 'enter') return;
+  state = 'done';
+  // the gun's done its job: give its GPU memory back
+  activeGun?.dispose();
+  activeGun = null;
   hideScreen(screens.stillhere, () => {
+    gsap.ticker.remove(placeStillBubble);
     unlockScroll();
     ScrollTrigger.refresh();
     document.getElementById('journey').scrollIntoView({ behavior: 'smooth' });
   });
-});
+}
+document.getElementById('btn-enter').addEventListener('click', enterPortfolio);
 
 /* ---------- built with: live line counts ---------- */
 document.querySelectorAll('.built-lines').forEach(async el => {
@@ -1410,3 +1847,16 @@ function chaosTick() {
 
 chaosToggles.forEach(b => b.addEventListener('click', () => setChaos(!document.documentElement.classList.contains('chaos'), true)));
 try { if (localStorage.getItem('chaos')) setChaos(true); } catch {}
+
+/* ---------- ?skip=1: the shortcut in the footer, straight to the portfolio ---------- */
+if (new URLSearchParams(location.search).get('skip') === '1') {
+  state = 'done';
+  markVisited();
+  hero.remove();
+  screens.intro.classList.add('hidden');
+  unlockScroll();
+  requestAnimationFrame(() => {
+    ScrollTrigger.refresh();
+    document.getElementById('journey').scrollIntoView();
+  });
+}

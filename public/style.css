@@ -522,6 +522,74 @@ html.locked,html.locked body{overflow:hidden;overscroll-behavior:none;height:100
 .still-title{font-size:clamp(34px,6vw,56px);font-weight:600;letter-spacing:-.04em}
 .still-sub{font-family:var(--mono);font-size:12px;color:var(--muted);margin:8px 0 28px}
 #btn-enter{flex:none;height:42px;padding:0 28px}
+.still-bubble{left:0;top:0;z-index:6;max-width:300px;text-align:left}
+.still-bubble::after{left:30%}
+/* no room above his head: the bubble sits beside it, tail pointing left */
+.still-bubble.side::after{left:-7px;bottom:auto;top:18px;transform:rotate(135deg)}
+#stillhere .lock-pill{display:flex;align-items:center;gap:8px;transition:background .3s,border-color .3s}
+#stillhere .lock-pill.unlocked{background:#f1f6ef;border-color:#cfdcc9}
+#stillhere .lock-pill .pulse{background:#8fb08a}
+
+/* ---------- the paper-sketch gun (sketch-gun.js) ---------- */
+/* no CSS filter here: a drop-shadow on a full-screen WebGL canvas is re-blurred every frame */
+.sketch-gun{position:fixed;inset:0;z-index:15;width:100%;height:100%;display:none;pointer-events:none}
+.sketch-gun.on{display:block}
+.sketch-scope{
+  position:fixed;left:0;right:0;top:-40vh;height:180vh;z-index:17;pointer-events:none;visibility:hidden;opacity:0;
+  background:radial-gradient(circle at var(--x) var(--y),transparent 0 var(--r),#e9e6df var(--r));
+}
+html.ads-on,html.ads-on *{cursor:none!important}
+.sketch-reticle{
+  position:fixed;left:-28px;top:-28px;z-index:16;width:56px;height:56px;pointer-events:none;opacity:0;
+  filter:drop-shadow(0 0 3px rgba(255,59,48,.55));
+}
+.sketch-reticle svg{display:block;width:100%;height:100%}
+/* phones have no right-click: a button to look down the sight */
+.ads-toggle{
+  position:fixed;right:16px;bottom:18px;z-index:18;height:40px;padding:0 16px;border-radius:999px;
+  border:1px solid var(--line);background:rgba(255,255,255,.9);color:var(--fg);
+  font:500 13px var(--mono);cursor:pointer;
+}
+.ads-toggle.on{background:var(--fg);border-color:var(--fg);color:#fff}
+.ads-toggle[hidden]{display:none}
+.sketch-scope svg{
+  position:absolute;overflow:visible;
+  width:calc(var(--r) * 2.3256);height:calc(var(--r) * 2.3256);
+  left:calc(var(--x) - var(--r) * 1.1628);top:calc(var(--y) - var(--r) * 1.1628);
+}
+
+/* ---------- act 2: the flat cutout, then the 3D room ---------- */
+#act2{background:#efe3cf}
+.scene-3d{position:absolute;inset:0;width:100%;height:100%;display:block}
+.act2-flat{position:absolute;inset:0;z-index:2;display:flex;align-items:flex-end;justify-content:center;background:var(--bg)}
+.act2-fig{display:block;height:min(66vh,600px);width:auto;margin-bottom:9vh}
+.act2-grid{
+  position:absolute;inset:0;z-index:3;pointer-events:none;opacity:0;
+  background:
+    linear-gradient(rgba(43,179,163,.4) 1px,transparent 1px) 0 0/36px 36px,
+    linear-gradient(90deg,rgba(43,179,163,.4) 1px,transparent 1px) 0 0/36px 36px;
+}
+.act2-scan{
+  position:absolute;left:0;right:0;top:0;z-index:4;height:3px;opacity:0;pointer-events:none;
+  background:#2bb3a3;box-shadow:0 0 22px 6px rgba(43,179,163,.55);
+}
+.act2-bubble{left:0;top:0;z-index:6;max-width:280px;text-align:left;pointer-events:none}
+.act2-bubble::after{left:50%;margin-left:-6px}
+.act2-vignette{
+  position:absolute;inset:0;z-index:12;pointer-events:none;opacity:0;
+  background:radial-gradient(ellipse at center,transparent 42%,rgba(150,8,16,.62) 100%);
+}
+#act2 .vitals-win{z-index:8}
+#act2.aiming,#act2.aiming *{cursor:crosshair}
+.act2-hint:empty{display:none}
+#act2.aiming .act2-hint{
+  z-index:16;left:50%;right:auto;transform:translateX(-50%);padding:6px 12px;border-radius:999px;
+  background:rgba(255,255,255,.85);color:var(--fg);white-space:nowrap;
+}
+@media(max-width:760px){
+  .act2-fig{height:52vh;height:52svh}
+  .act2-bubble,.still-bubble{max-width:210px;font-size:13px}
+}
 
 @media(max-width:1100px){
   .float-win{width:160px}
@@ -746,6 +814,8 @@ html.locked,html.locked body{overflow:hidden;overscroll-behavior:none;height:100
 .note-face{color:var(--muted);white-space:nowrap}
 .note-sign{color:var(--muted)}
 .site-footer{padding:80px 24px 40px;text-align:center;line-height:1.8;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.skip-link{color:inherit;text-underline-offset:3px}
+.skip-link:hover{color:var(--fg)}
 
 @media(max-width:860px){
   .built-grid{grid-template-columns:1fr}

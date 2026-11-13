@@ -188,7 +188,25 @@
     <p class="go-refused" id="go-refused" aria-live="polite"></p>
   </section>
 
+  <!-- act 2: "ew, this looks so AI." the flat cutout gets swapped for a 3D room (act2-scene.js) -->
+  <section id="act2" class="scene act2 hidden" aria-label="Second chance">
+    <canvas id="scene-3d" class="scene-3d" aria-hidden="true"></canvas>
+    <div class="act2-flat" id="act2-flat">
+      <img class="act2-fig" id="act2-fig" src="assets/stand.png" alt="Sein standing">
+    </div>
+    <div class="act2-grid" id="act2-grid" aria-hidden="true"></div>
+    <div class="act2-scan" id="act2-scan" aria-hidden="true"></div>
+    <div class="bubble act2-bubble" id="act2-bubble" hidden aria-live="polite"><p></p></div>
+    <div class="act2-vignette" id="act2-vignette" aria-hidden="true"></div>
+    <p class="hint act2-hint" id="act2-hint"></p>
+  </section>
+
   <section id="stillhere" class="scene hidden">
+    <header class="nav">
+      <span class="logo">sein<span class="dim">.portfolio</span></span>
+      <span class="lock-pill" id="still-lock">scroll locked</span>
+    </header>
+    <div class="bubble still-bubble" id="still-bubble" hidden aria-live="polite"><p></p></div>
     <div class="still-inner">
       <img class="still-fig" src="assets/stand.png" alt="Sein standing">
       <svg class="still-pulse" viewBox="0 0 240 40" aria-hidden="true"><path d="M0 20 H96 L104 20 L110 6 L118 34 L124 14 L130 20 H240"/></svg>
@@ -461,7 +479,7 @@ res.json({ category: Object.hasOwn(CATEGORIES, category) ? category : 'unknown' 
       </div>
     </section>
 
-    <footer class="site-footer">designed by sein · built with HTML, CSS, JS, GSAP &amp; help from AI<br>made by sein, who is <span id="boss-door">still here</span>.</footer>
+    <footer class="site-footer">designed by sein · built with HTML, CSS, JS, GSAP &amp; help from AI<br>made by sein, who is <span id="boss-door">still here</span>.<br><a class="skip-link" href="?skip=1">psst. coming back? skip the intro next time ↗</a></footer>
   </div>
 
 </main>
@@ -518,7 +536,7 @@ res.json({ category: Object.hasOwn(CATEGORIES, category) ? category : 'unknown' 
 <script src="replies.js"></script>
 <script src="script.js"></script>
 <script src="bossfight.js"></script>
-<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js" } }</script>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/" } }</script>
 <script type="module" src="hero-badge.js"></script>
 </body>
 </html>
